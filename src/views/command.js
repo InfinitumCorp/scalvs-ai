@@ -1,6 +1,6 @@
 import { getState, plan } from '../store.js';
 import { TEMPLATES, REWARD_RULES } from '../data.js';
-import { startRun, approve, reject, clearFinished, isLive } from '../runner.js';
+import { startRun, approve, reject, clearFinished, isLive, creditUsage } from '../runner.js';
 import { esc, md, ago, fmt, statusLabel, toast } from '../ui.js';
 
 let target = null;   // "agent:<id>" | "team:<id>"
@@ -64,6 +64,7 @@ export function render() {
   const s = getState();
   const p = plan();
   const used = s.wallet.creditsUsed;
+  const usage = creditUsage();
   const pct = Math.min(100, (used / p.credits) * 100);
   const approvals = s.runs.filter((r) => r.status === 'awaiting_approval');
   const active = s.runs.filter((r) => r.status === 'running').length;
@@ -98,6 +99,7 @@ export function render() {
       <div class="row between"><span class="muted small">AI credits this month</span><span class="small">${fmt(used)} / ${fmt(p.credits)}</span></div>
       <div class="meter" role="progressbar" aria-valuenow="${used}" aria-valuemin="0" aria-valuemax="${p.credits}"><span style="width:${pct}%"></span></div>
       <span class="muted small">${REWARD_RULES.creditsPerRun} credits per agent step · ${p.label} plan</span>
+      <span class="muted small">${fmt(usage.reserved)} reserved · ${fmt(usage.available)} available · resets monthly (UTC)</span>
     </div>
   </div>
 

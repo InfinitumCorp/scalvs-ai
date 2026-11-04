@@ -5,6 +5,7 @@ import { PLANS, TEMPLATES } from './data.js';
 
 const KEY = 'scalvs.state.v1';
 const listeners = new Set();
+const creditMonth = () => new Date().toISOString().slice(0, 7);
 
 export const uid = (prefix = 'id') => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -33,6 +34,7 @@ function seed() {
       { id: uid('mem'), text: 'Audience: business and government decision-makers.', products: ['SCALVS.ai'] },
     ],
     wallet: {
+      creditMonth: creditMonth(),
       creditsUsed: 0,
       activity: 0,
       sclv: 0,
@@ -60,7 +62,17 @@ function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* ignore */ }
 }
 
-export const getState = () => state;
+export const getState = () => {
+  const month = creditMonth();
+  // Preserve legacy usage when upgrading; start tracking the period from now.
+  if (!state.wallet.creditMonth) { state.wallet.creditMonth = month; persist(); }
+  else if (state.wallet.creditMonth < month) {
+    state.wallet.creditMonth = month;
+    state.wallet.creditsUsed = 0;
+    persist();
+  }
+  return state;
+};
 
 export function update(mutator) {
   mutator(state);
@@ -85,3 +97,4 @@ export function addLedger(entry) {
   state.wallet.ledger.unshift({ id: uid('tx'), at: Date.now(), ...entry });
   state.wallet.ledger = state.wallet.ledger.slice(0, 60);
 }
+

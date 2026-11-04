@@ -26,6 +26,8 @@ Provider failures and empty model responses fail the run with a retryable error;
 
 ## Validation
 
+Prototype credits reset by UTC calendar month. Queued steps in active teams reserve credits; rejecting or failing a run releases its unused reservation. Plan changes are rechecked before each step. Started steps consume prototype credits even if the provider fails; these credits are not provider-token billing. Limits are browser-local and are not a production billing or authorization boundary. Active and approval-pending runs are retained independently of the 40-item finished-history limit.
+
 Run `npm test` for agent lifecycle and API regression tests. Provider responses are fixtures; the tests do not establish live provider connectivity. Browser verification covers demo completion, visible demo labeling and unchanged reward balances.
 
 ## Run locally

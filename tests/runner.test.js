@@ -79,3 +79,55 @@ test('duplicate approval cannot skip a team step or change completion', async ()
   runner.reject(run.id);
   assert.equal(run.status, 'completed');
 });
+
+test('team reservations prevent concurrent runs from overspending the allowance', async () => {
+  const finishes = [];
+  globalThis.fetch = () => new Promise(resolve => { finishes.push(resolve); });
+  store.update(s => { s.wallet.creditsUsed = 176; });
+  const ids = store.getState().agents.map(a => a.id);
+  const { run } = runner.startRun({ task: 'Two steps', agentIds: [ids[1], ids[0]] });
+  const second = runner.startRun({ task: 'Another run', agentIds: [ids[0]] });
+  finishes.forEach(resolve => resolve(Response.json({ mode: 'live', output: 'First step' })));
+  await tick(() => run.status === 'awaiting_approval');
+  runner.reject(run.id);
+  assert.ok(second.error, 'the queued step must reserve its 12 credits');
+  assert.equal(store.getState().wallet.creditsUsed, 188);
+  assert.equal(runner.creditUsage().reserved, 0);
+  assert.equal(runner.creditUsage().available, 12);
+});
+
+test('resuming after a plan downgrade never charges over the new limit', async () => {
+  store.update(s => { s.plan = 'pro'; s.wallet.creditsUsed = 200; });
+  globalThis.fetch = async () => Response.json({ mode: 'live', output: 'Draft' });
+  const ids = store.getState().agents.map(a => a.id);
+  const { run } = runner.startRun({ task: 'Two steps', agentIds: [ids[1], ids[0]] });
+  await tick(() => run.status === 'awaiting_approval');
+  store.update(s => { s.plan = 'free'; });
+  runner.approve(run.id);
+  assert.equal(run.status, 'failed');
+  assert.equal(store.getState().wallet.creditsUsed, 212);
+  assert.equal(runner.creditUsage().reserved, 0);
+});
+
+test('monthly usage rolls over while other balances remain intact', () => {
+  store.update(s => {
+    s.wallet.creditMonth = '1999-01';
+    s.wallet.creditsUsed = 200;
+    s.wallet.sclv = 7;
+  });
+  const s = store.getState();
+  assert.equal(s.wallet.creditsUsed, 0);
+  assert.equal(s.wallet.creditMonth, new Date().toISOString().slice(0, 7));
+  assert.equal(s.wallet.sclv, 7);
+});
+
+test('new runs do not discard active runs when history reaches 40 entries', async () => {
+  store.update(s => {
+    s.plan = 'government';
+    s.runs = Array.from({ length: 40 }, (_, n) => ({ id: `active-${n}`, status: 'awaiting_approval', steps: [{ status: 'awaiting_approval' }] }));
+  });
+  globalThis.fetch = async () => Response.json({ mode: 'live', output: 'Draft' });
+  const { run } = runner.startRun({ task: 'One more run', agentIds: [store.getState().agents[0].id] });
+  await tick(() => run.status === 'completed');
+  assert.ok(store.getState().runs.some(r => r.id === 'active-39'));
+});

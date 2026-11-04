@@ -1,5 +1,5 @@
 // Agent runtime on the client: sequences agents, handles approvals,
-// meters credits and settles (simulated) rewards on verified runs.
+// meters prototype credits. Draft completion never settles rewards.
 
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
@@ -80,6 +80,14 @@ async function callAgent(agent, task, previous) {
 }
 
 // ---------- run lifecycle ----------
+export function creditUsage() {
+  const s = getState();
+  const reserved = s.runs
+    .filter(r => r.status === 'running' || r.status === 'awaiting_approval')
+    .reduce((sum, r) => sum + r.steps.filter(step => step.status === 'queued').length * REWARD_RULES.creditsPerRun, 0);
+  return { used: s.wallet.creditsUsed, reserved, available: Math.max(0, plan().credits - s.wallet.creditsUsed - reserved) };
+}
+
 export function startRun({ task, agentIds, title }) {
   if (typeof task !== 'string' || !task.trim() || task.length > 6000) return { error: 'Enter a task between 1 and 6000 characters.' };
   if (!Array.isArray(agentIds) || !agentIds.length || agentIds.some(id => !findAgent(id))) return { error: 'Choose existing agents for every team step.' };
@@ -88,7 +96,7 @@ export function startRun({ task, agentIds, title }) {
   const steps = agentIds.map(findAgent).filter(Boolean);
   if (!steps.length) return { error: 'Choose an agent or team.' };
   const needed = steps.length * REWARD_RULES.creditsPerRun;
-  if (s.wallet.creditsUsed + needed > plan().credits) {
+  if (needed > creditUsage().available) {
     return { error: `Not enough AI credits this month on the ${plan().label} plan. Upgrade in Earnings → Plans.` };
   }
   const run = {
@@ -100,7 +108,11 @@ export function startRun({ task, agentIds, title }) {
     current: 0,
     steps: steps.map((a) => ({ agentId: a.id, name: a.name, status: 'queued', output: '', mode: null })),
   };
-  update((st) => { st.runs.unshift(run); st.runs = st.runs.slice(0, 40); });
+  update((st) => {
+    st.runs.unshift(run);
+    let finished = 0;
+    st.runs = st.runs.filter(r => r.status === 'running' || r.status === 'awaiting_approval' || finished++ < 40);
+  });
   advance(run.id);
   return { run };
 }
@@ -122,6 +134,11 @@ async function advance(runId) {
   const agent = findAgent(step.agentId);
   if (!agent) {
     mutateRun(runId, (r) => { r.status = 'failed'; r.error = 'Agent was deleted.'; });
+    return;
+  }
+  // Check again after approvals or a plan change. Never charge beyond the limit.
+  if (getState().wallet.creditsUsed + REWARD_RULES.creditsPerRun > plan().credits) {
+    mutateRun(runId, r => { r.status = 'failed'; r.error = 'Not enough AI credits to continue this run.'; r.steps[idx].status = 'failed'; });
     return;
   }
   mutateRun(runId, (r, st) => {
