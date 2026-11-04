@@ -2,6 +2,7 @@ import { getState, plan } from '../store.js';
 import { TEMPLATES, REWARD_RULES } from '../data.js';
 import { startRun, approve, reject, stopRun, clearFinished, isLive, creditUsage } from '../runner.js';
 import { esc, md, ago, fmt, statusLabel, toast } from '../ui.js';
+import { setDraft } from '../forecaster.js';
 
 let target = null;   // "agent:<id>" | "team:<id>"
 let taskDraft = '';
@@ -49,7 +50,7 @@ function runCard(r, index) {
         <li class="step ${esc(st.status)}">
           <div class="step-head"><strong>${esc(st.name)}</strong>
             <span class="muted small">${statusLabel[st.status]}${st.mode === 'demo' ? ' · demo' : st.mode === 'live' ? ' · live' : ''}</span>
-            ${st.output && st.status !== 'running' ? `<button class="copy" data-action="copy" data-id="${r.id}" data-step="${i}" aria-label="Copy ${esc(st.name)}'s output">Copy</button>` : ''}</div>
+            ${st.output && st.status !== 'running' ? `<button class="copy" data-action="copy" data-id="${r.id}" data-step="${i}" aria-label="Copy ${esc(st.name)}'s output">Copy</button>` : ''}${st.output && st.status === 'done' ? `<button class="copy" data-action="forecast" data-id="${r.id}" data-step="${i}" aria-label="Forecast reactions to ${esc(st.name)}'s output">Forecast this</button>` : ''}</div>
           ${st.status === 'running' && !st.output ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
           ${st.output ? `<div class="prose${st.status === 'running' ? ' streaming' : ''}" ${st.status === 'running' ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
         </li>`).join('')}
@@ -168,6 +169,12 @@ export function bind(root, rerender) {
     else if (action === 'reject') reject(id);
     else if (action === 'clear') clearFinished();
     else if (action === 'stop') { stopRun(id); toast('Run stopped'); }
+    else if (action === 'forecast') {
+      const run = getState().runs.find((x) => x.id === id);
+      const out = run?.steps[Number(el.dataset.step)]?.output || '';
+      setDraft({ seed: out.slice(0, 60000), question: `How will people react to this, and what happens next? (${run.task.slice(0, 160)})`, product: 'SCALVS.ai' });
+      location.hash = '#/forecast';
+    }
     else if (action === 'copy') {
       const run = getState().runs.find((x) => x.id === id);
       const text = run?.steps[Number(el.dataset.step)]?.output || '';

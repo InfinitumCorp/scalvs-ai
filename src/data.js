@@ -73,9 +73,19 @@ export const DATASETS = [
 
 export const REWARD_RULES = {
   creditsPerRun: 12,          // AI credits consumed per agent step (simulated)
+  creditsPerForecast: 60,     // AI credits per MiroFish swarm forecast (simulated)
   activityPerVerified: 5,     // activity credits per verified run
   sclvPerVerified: 2,         // $SCLV per verified contribution
   sclvWeeklyCap: 50,          // capped rewards: value is real, not farmed
   dataShare: 0.85,            // keep 85% of every verified data sale
   adSharePerDay: 0.4,         // simulated ad revenue share (USD) when opted in
 };
+
+// Predictive simulation (MiroFish swarm engine) use cases, one per Infinitum
+// product that can act on a forecast. Picking one pre-fills the question.
+export const FORECAST_PRESETS = [
+  { product: 'SCALVS.ai', label: 'Launch reaction', question: 'How will our target audience react to this launch over the first two weeks, and which objections will spread fastest?' },
+  { product: '+SPCTR', label: 'Account response', question: 'How are our key accounts likely to respond to this pricing or contract change, and which relationships are most at risk?' },
+  { product: 'METATRON¹⁰⁰', label: 'Public scenario', question: 'How will public opinion evolve after this announcement, and what are the most likely best, base and worst cases?' },
+  { product: '/CNDCTR/', label: 'Pre-flight check', question: 'Before we execute this plan, how will the affected stakeholders react, and what should we change first?' },
+];

@@ -4,8 +4,10 @@ import * as command from './views/command.js';
 import * as studio from './views/studio.js';
 import * as connect from './views/connect.js';
 import * as earnings from './views/earnings.js';
+import * as forecast from './views/forecast.js';
+import { checkForecastLive, resumeForecasts } from './forecaster.js';
 
-const ROUTES = { command, studio, connect, earnings };
+const ROUTES = { command, studio, connect, forecast, earnings };
 const main = document.getElementById('main');
 let current = null;
 let root = null;
@@ -44,6 +46,7 @@ function renderView() {
 function renderNav() {
   const s = getState();
   const pending = s.runs.filter((r) => r.status === 'awaiting_approval').length;
+  const forecasting = s.forecasts.filter((f) => f.job.status === 'running').length;
   document.querySelectorAll('[data-route]').forEach((a) => {
     const on = a.dataset.route === current;
     a.classList.toggle('active', on);
@@ -52,6 +55,9 @@ function renderNav() {
   const badge = document.getElementById('approvals-badge');
   badge.textContent = pending;
   badge.hidden = pending === 0;
+  const fBadge = document.getElementById('forecast-badge');
+  fBadge.textContent = forecasting;
+  fBadge.hidden = forecasting === 0;
   document.getElementById('plan-label').textContent = `${plan().label} plan`;
   document.getElementById('sclv-label').textContent = `${s.wallet.sclv} $SCLV`;
 }
@@ -79,3 +85,4 @@ document.getElementById('scrim').addEventListener('click', () => document.body.c
 navigate();
 recoverInterrupted();
 checkLive().then(() => renderView());
+checkForecastLive().then(() => { resumeForecasts(); renderView(); });

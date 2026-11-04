@@ -6,7 +6,10 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as api from './api/run.js';
+import * as runApi from './api/run.js';
+import * as forecastApi from './api/forecast.js';
+
+const APIS = { '/api/run': runApi, '/api/forecast': forecastApi };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -18,7 +21,8 @@ const TYPES = {
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (url.pathname === '/api/run') {
+    const api = APIS[url.pathname];
+    if (api) {
       const handler = api[req.method];
       if (!handler) { res.writeHead(405).end(); return; }
       const chunks = [];

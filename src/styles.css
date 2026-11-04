@@ -246,6 +246,23 @@ button.chip:hover { border-color: var(--line); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- responsive ---------- */
+/* ---------- forecasts ---------- */
+.label { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
+.form label.inline { display: grid; gap: 6px; min-width: 150px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.fc-stages { list-style: none; padding: 0; margin: 14px 0 6px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; font-size: 12.5px; color: var(--faint); }
+.fc-stage { display: flex; align-items: center; gap: 6px; }
+.fc-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #c9c9c9; flex: none; }
+.fc-stage.done { color: var(--muted); } .fc-stage.done .fc-dot { background: var(--ink); border-color: var(--ink); }
+.fc-stage.now { color: var(--ink); font-weight: 500; } .fc-stage.now .fc-dot { border-color: var(--ink); animation: fcpulse 1.2s ease-in-out infinite; }
+.fc-stage.failed .fc-dot { border-color: var(--err); background: var(--err); } .fc-stage.stopped .fc-dot { border-color: var(--muted); background: var(--muted); }
+@keyframes fcpulse { 50% { box-shadow: 0 0 0 4px rgba(0,0,0,.08); } }
+.fc-report { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.fc-report h3, .fc-chat h3 { font-size: 14px; margin: 0; }
+.fc-chat { margin-top: 18px; display: grid; gap: 10px; }
+.fc-msg.user { background: var(--soft); border-radius: 18px; padding: 8px 14px; margin-left: auto; max-width: 85%; width: fit-content; }
+.run-head .tag { flex: none; }
+
 @media (max-width: 860px) {
   .sidebar { transform: translateX(-100%); visibility: hidden; transition: transform .25s, visibility .25s; }
   body.nav-open .sidebar { transform: none; visibility: visible; box-shadow: 0 0 40px rgba(0,0,0,.12); }
@@ -262,6 +279,8 @@ button.chip:hover { border-color: var(--line); }
   .hero-title { font-size: 24px; }
 }
 @media (max-width: 480px) {
+  .fc-stages { grid-template-columns: 1fr; }
+  .run-head .tag { display: none; }
   .templates { grid-template-columns: 1fr; }
   .list-row { flex-wrap: wrap; }
   .mode { display: none; }

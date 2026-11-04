@@ -28,6 +28,7 @@ function seed() {
     ],
     teams: [],
     runs: [],
+    forecasts: [],
     connections: { cumulus: true, cndctr: true, firm: true },
     vault: [
       { id: uid('mem'), text: 'Organization: Infinitum Corporation, Washington, D.C.', products: ['SCALVS.ai', '+SPCTR', 'VEIL</>'] },
