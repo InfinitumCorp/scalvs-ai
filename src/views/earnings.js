@@ -25,8 +25,8 @@ export function render() {
     <div class="panel-head"><h2>How rewards work</h2></div>
     <ul class="plain small">
       <li>Every agent step uses ${REWARD_RULES.creditsPerRun} AI credits from your plan.</li>
-      <li>Each verified run earns ${REWARD_RULES.activityPerVerified} activity credits.</li>
-      <li>Verified contributions earn ${REWARD_RULES.sclvPerVerified} $SCLV, capped at ${REWARD_RULES.sclvWeeklyCap} per week, so value is real, not farmed.</li>
+      <li>Completing or approving a draft does not verify a contribution or earn tokens.</li>
+      <li>Contribution verification and reward settlement are not connected yet. The balances below are examples only.</li>
     </ul>
   </section>
 
@@ -62,7 +62,7 @@ export function render() {
     <div class="panel-head"><h2>Ledger</h2><span class="tag">would settle on Firmament Network</span></div>
     ${w.ledger.length ? `<table class="table"><thead><tr><th>When</th><th>What</th><th class="num">Amount</th></tr></thead><tbody>
       ${w.ledger.map((t) => `<tr><td class="muted">${ago(t.at)}</td><td>${esc(t.note)}</td><td class="num">+${fmt(t.amount, t.unit === 'USD' ? 2 : 0)} ${esc(t.unit)}</td></tr>`).join('')}
-    </tbody></table>` : '<p class="muted small">Nothing yet. Complete a verified run in Command Center.</p>'}
+    </tbody></table>` : '<p class="muted small">No simulated transactions. Task completion does not create rewards.</p>'}
   </section>
 
   <section class="panel">
@@ -119,3 +119,4 @@ export function bind(root) {
     }
   });
 }
+

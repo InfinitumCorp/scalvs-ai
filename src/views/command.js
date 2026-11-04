@@ -35,7 +35,7 @@ function runCard(r) {
   return `
   <article class="run ${esc(r.status)}">
     <button class="run-head" data-action="toggle-run" data-id="${r.id}" aria-expanded="${open}">
-      <span class="status-pill ${esc(r.status)}">${statusLabel[r.status]}${r.verified ? ' · verified' : ''}</span>
+      <span class="status-pill ${esc(r.status)}">${statusLabel[r.status]}${r.steps.some(s => s.mode === 'demo') ? ' · demo' : ''}</span>
       <span class="run-title">${esc(r.title)}</span>
       <span class="muted small">${ago(r.createdAt)}</span>
     </button>
@@ -73,6 +73,7 @@ export function render() {
   return `
   <section class="hero">
     <h1 class="hero-title">What should your agents do?</h1>
+    <p class="small muted" role="status">${live === true ? 'Live AI drafts. App connections are simulated; external actions and contribution rewards are not verified.' : live === false ? 'Demo mode: outputs and connections are simulated. Tasks do not earn tokens.' : 'Checking AI availability…'}</p>
     <form id="run-form" class="composer">
       <textarea name="task" rows="2" maxlength="6000" required placeholder="${esc(exampleFor())}" aria-label="Task">${esc(taskDraft)}</textarea>
       <div class="composer-bar">
@@ -157,3 +158,4 @@ export function bind(root, rerender) {
     else if (action === 'clear') clearFinished();
   });
 }
+

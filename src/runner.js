@@ -1,7 +1,7 @@
 // Agent runtime on the client: sequences agents, handles approvals,
 // meters credits and settles (simulated) rewards on verified runs.
 
-import { getState, update, uid, plan, addLedger } from './store.js';
+import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
 
 let liveStatus = null; // null = unknown, true = live model, false = demo
@@ -17,12 +17,6 @@ export async function checkLive() {
   return liveStatus;
 }
 export const isLive = () => liveStatus;
-
-const weekKey = () => {
-  const d = new Date();
-  const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return `${d.getUTCFullYear()}-w${Math.ceil(((d - start) / 86400000 + start.getUTCDay() + 1) / 7)}`;
-};
 
 function findAgent(id) {
   return getState().agents.find((a) => a.id === id);
@@ -71,12 +65,14 @@ async function callAgent(agent, task, previous) {
       } else {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        if (data.mode !== 'live' || typeof data.output !== 'string' || !data.output.trim()) {
+          throw new Error('The model returned no valid output. Please retry.');
+        }
         liveStatus = true;
         return { output: data.output, mode: 'live' };
       }
     } catch (err) {
-      if (liveStatus === true) throw err;
-      liveStatus = false;
+      throw err;
     }
   }
   await new Promise((r) => setTimeout(r, 700 + Math.random() * 700));
@@ -85,6 +81,9 @@ async function callAgent(agent, task, previous) {
 
 // ---------- run lifecycle ----------
 export function startRun({ task, agentIds, title }) {
+  if (typeof task !== 'string' || !task.trim() || task.length > 6000) return { error: 'Enter a task between 1 and 6000 characters.' };
+  if (!Array.isArray(agentIds) || !agentIds.length || agentIds.some(id => !findAgent(id))) return { error: 'Choose existing agents for every team step.' };
+  task = task.trim();
   const s = getState();
   const steps = agentIds.map(findAgent).filter(Boolean);
   if (!steps.length) return { error: 'Choose an agent or team.' };
@@ -155,6 +154,8 @@ async function advance(runId) {
 }
 
 export function approve(runId) {
+  const pending = getState().runs.find(r => r.id === runId);
+  if (pending?.status !== 'awaiting_approval' || pending.steps[pending.current]?.status !== 'awaiting_approval') return;
   mutateRun(runId, (r) => {
     r.steps[r.current].status = 'done';
     r.current += 1;
@@ -164,6 +165,8 @@ export function approve(runId) {
 }
 
 export function reject(runId) {
+  const pending = getState().runs.find(r => r.id === runId);
+  if (pending?.status !== 'awaiting_approval' || pending.steps[pending.current]?.status !== 'awaiting_approval') return;
   mutateRun(runId, (r) => {
     r.steps[r.current].status = 'rejected';
     r.status = 'rejected';
@@ -171,30 +174,15 @@ export function reject(runId) {
 }
 
 function complete(runId) {
-  mutateRun(runId, (r, st) => {
-    // Verification: every step produced output and was approved where required.
-    const verified = r.steps.every((s) => s.status === 'done' && s.output.trim().length > 0);
+  mutateRun(runId, (r) => {
+    // Draft completion is not evidence of a verified contribution or external action.
     r.status = 'completed';
-    r.verified = verified;
+    r.verified = false;
     r.finishedAt = Date.now();
-    if (!verified) return;
-
-    const w = st.wallet;
-    w.activity += REWARD_RULES.activityPerVerified;
-    addLedger({ kind: 'activity', amount: REWARD_RULES.activityPerVerified, unit: 'credits', note: `Verified run: ${r.title}` });
-
-    const wk = weekKey();
-    if (w.week !== wk) { w.week = wk; w.sclvThisWeek = 0; }
-    const room = Math.max(0, REWARD_RULES.sclvWeeklyCap - w.sclvThisWeek);
-    const reward = Math.min(REWARD_RULES.sclvPerVerified, room);
-    if (reward > 0) {
-      w.sclv += reward;
-      w.sclvThisWeek += reward;
-      addLedger({ kind: 'sclv', amount: reward, unit: '$SCLV', note: 'Capped reward for verified contribution' });
-    }
   });
 }
 
 export function clearFinished() {
   update((st) => { st.runs = st.runs.filter((r) => r.status === 'running' || r.status === 'awaiting_approval'); });
 }
+

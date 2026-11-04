@@ -56,7 +56,9 @@ export async function POST(request) {
     ? `Task:\n${task}\n\nOutput from the previous agent in this team, to build on:\n${clip(body.previous, 8000)}`
     : task;
 
+  try {
   const upstream = await fetch(API_URL, {
+    signal: AbortSignal.timeout(45000),
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -72,20 +74,24 @@ export async function POST(request) {
   });
 
   if (!upstream.ok) {
-    const detail = await upstream.text().catch(() => '');
-    return json({ error: `Model request failed (${upstream.status})`, detail: clip(detail, 500) }, 502);
+    return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
   }
 
   const data = await upstream.json();
-  const output = (data.content || [])
-    .filter((block) => block.type === 'text')
+  const output = (Array.isArray(data.content) ? data.content : [])
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text)
     .join('\n')
     .trim();
 
+  if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
   return json({ mode: 'live', model: data.model, output, usage: data.usage || null });
+  } catch {
+    return json({ error: 'The model request could not complete. Please retry.' }, 502);
+  }
 }
 
 export function GET() {
   return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) });
 }
+

@@ -11,7 +11,7 @@ This is the first working prototype of the four-step flow from the [product page
 | 03 Run | **Command Center** | Chat-style composer to give an agent or team a task; live run timeline; **human approval** gates; AI-credit meter per plan; schedules list. |
 | 04 Earn | **Earnings & Data Wallet** | Activity credits and capped **$SCLV** rewards on verified runs, ad revenue share opt-in (Free plan), data licensing with an 85% share, ledger, plan switcher. |
 
-> **Simulated economy.** $SCLV, balances, sales and the ledger are mock values stored in the browser. No tokens, wallets, blockchain transactions or payments are involved.
+> **Simulated economy.** $SCLV, balances, sales and the ledger are mock values stored in the browser. No tokens, wallets, blockchain transactions or payments are involved. Completing a demo or live AI draft does not verify a contribution and does not award activity credits or tokens. Contribution verification and settlement remain unimplemented.
 
 ## Live vs demo mode
 
@@ -21,6 +21,12 @@ Agent steps run through `api/run.js`, a Vercel serverless function that calls th
 - **Demo:** with no key the function answers `503` and the app falls back to simulated agent output, so everything still works end to end.
 
 The composer shows which mode is active.
+
+Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. Approval applies only to the currently pending draft and cannot advance a team twice. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
+
+## Validation
+
+Run `npm test` for agent lifecycle and API regression tests. Provider responses are fixtures; the tests do not establish live provider connectivity. Browser verification covers demo completion, visible demo labeling and unchanged reward balances.
 
 ## Run locally
 
@@ -57,3 +63,4 @@ dev-server.mjs        zero-dependency local server
 - Streaming responses and tool use in the agent runtime
 
 © 2026 Infinitum Corporation
+
