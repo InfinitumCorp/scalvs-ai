@@ -1,0 +1,12 @@
+{
+  "name": "scalvs-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SCALVS.ai — Infinitum's AI workforce platform (prototype)",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "check": "node --check api/run.js && for f in src/*.js src/views/*.js; do node --check $f || exit 1; done"
+  }
+}
