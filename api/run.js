@@ -5,7 +5,7 @@
 // When no key is configured it answers 503 { mode: "demo" } and the client
 // falls back to its built-in simulated runner, so the prototype still works.
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
+const apiUrl = () => `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '')}/v1/messages`;
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const MAX_TASK_CHARS = 6000;
 
@@ -56,8 +56,10 @@ export async function POST(request) {
     ? `Task:\n${task}\n\nOutput from the previous agent in this team, to build on:\n${clip(body.previous, 8000)}`
     : task;
 
-  const upstream = await fetch(API_URL, {
+  const stream = body.stream === true;
+  const upstream = await fetch(apiUrl(), {
     method: 'POST',
+    signal: request.signal,
     headers: {
       'content-type': 'application/json',
       'x-api-key': key,
@@ -66,10 +68,13 @@ export async function POST(request) {
     body: JSON.stringify({
       model: process.env.SCALVS_MODEL || DEFAULT_MODEL,
       max_tokens: 1500,
+      stream,
       system: buildSystemPrompt(body.agent, body.context),
       messages: [{ role: 'user', content: userContent }],
     }),
   });
+
+  if (upstream.ok && stream) return relayStream(upstream);
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '');
@@ -84,6 +89,58 @@ export async function POST(request) {
     .trim();
 
   return json({ mode: 'live', model: data.model, output, usage: data.usage || null });
+}
+
+// Re-emit Anthropic's SSE stream as a minimal one for the client:
+//   data: {"type":"text","text":"..."}   (repeated)
+//   data: {"type":"done","usage":{...}}  or  data: {"type":"error","error":"..."}
+export function relayStream(upstream) {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const send = (controller, obj) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+  const body = new ReadableStream({
+    async start(controller) {
+      const reader = upstream.body.getReader();
+      let buffer = '';
+      const usage = {};
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let cut;
+          while ((cut = buffer.indexOf('\n\n')) >= 0) {
+            const event = buffer.slice(0, cut);
+            buffer = buffer.slice(cut + 2);
+            const line = event.split('\n').find((l) => l.startsWith('data:'));
+            if (!line) continue;
+            let data;
+            try { data = JSON.parse(line.slice(5).trim()); } catch { continue; }
+            if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') {
+              send(controller, { type: 'text', text: data.delta.text });
+            } else if (data.type === 'message_start') {
+              Object.assign(usage, data.message?.usage || {});
+            } else if (data.type === 'message_delta') {
+              Object.assign(usage, data.usage || {});
+            } else if (data.type === 'error') {
+              send(controller, { type: 'error', error: data.error?.message || 'Model stream error' });
+            }
+          }
+        }
+        send(controller, { type: 'done', usage });
+      } catch (err) {
+        send(controller, { type: 'error', error: err?.message || 'Stream interrupted' });
+      } finally {
+        controller.close();
+      }
+    },
+    cancel() { upstream.body.cancel().catch(() => {}); },
+  });
+
+  return new Response(body, {
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' },
+  });
 }
 
 export function GET() {

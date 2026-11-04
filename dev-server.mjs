@@ -23,13 +23,25 @@ createServer(async (req, res) => {
       if (!handler) { res.writeHead(405).end(); return; }
       const chunks = [];
       for await (const c of req) chunks.push(c);
-      const request = new Request(url, { method: req.method, headers: req.headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+      const abort = new AbortController();
+      res.on('close', () => abort.abort());
+      const request = new Request(url, { method: req.method, headers: req.headers, signal: abort.signal, body: chunks.length ? Buffer.concat(chunks) : undefined });
       const response = await handler(request);
       res.writeHead(response.status, Object.fromEntries(response.headers));
-      res.end(Buffer.from(await response.arrayBuffer()));
+      if (!response.body) { res.end(); return; }
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+      } catch { /* client went away */ }
+      res.end();
       return;
     }
-    let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
+    const urlPath = url.pathname.replace(/\/+$/, '/');
+    let path = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, '');
     if (path === '/' || path === '\\') path = '/index.html';
     const file = join(ROOT, path);
     if (!file.startsWith(ROOT) || !(await stat(file)).isFile()) throw new Error('not found');

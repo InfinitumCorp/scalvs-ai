@@ -1,6 +1,6 @@
 import { getState, plan } from '../store.js';
 import { TEMPLATES, REWARD_RULES } from '../data.js';
-import { startRun, approve, reject, clearFinished, isLive } from '../runner.js';
+import { startRun, approve, reject, stopRun, clearFinished, isLive } from '../runner.js';
 import { esc, md, ago, fmt, statusLabel, toast } from '../ui.js';
 
 let target = null;   // "agent:<id>" | "team:<id>"
@@ -29,8 +29,10 @@ function exampleFor() {
   return tpl ? `e.g. ${tpl.example}` : 'Describe an outcome…';
 }
 
-function runCard(r) {
-  const open = expanded.has(r.id) || r.status === 'awaiting_approval' || r.status === 'running';
+const collapsed = new Set(); // newest run is open unless the user closed it
+
+function runCard(r, index) {
+  const open = (index === 0 && !collapsed.has(r.id)) || expanded.has(r.id) || r.status === 'awaiting_approval' || r.status === 'running';
   const needs = r.status === 'awaiting_approval';
   return `
   <article class="run ${esc(r.status)}">
@@ -43,18 +45,21 @@ function runCard(r) {
     <div class="run-body">
       <p class="run-task">${esc(r.task)}</p>
       <ol class="steps">
-        ${r.steps.map((st) => `
+        ${r.steps.map((st, i) => `
         <li class="step ${esc(st.status)}">
           <div class="step-head"><strong>${esc(st.name)}</strong>
-            <span class="muted small">${statusLabel[st.status]}${st.mode === 'demo' ? ' · demo' : st.mode === 'live' ? ' · live' : ''}</span></div>
-          ${st.status === 'running' ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
-          ${st.output ? `<div class="prose">${md(st.output)}</div>` : ''}
+            <span class="muted small">${statusLabel[st.status]}${st.mode === 'demo' ? ' · demo' : st.mode === 'live' ? ' · live' : ''}</span>
+            ${st.output && st.status !== 'running' ? `<button class="copy" data-action="copy" data-id="${r.id}" data-step="${i}" aria-label="Copy ${esc(st.name)}'s output">Copy</button>` : ''}</div>
+          ${st.status === 'running' && !st.output ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
+          ${st.output ? `<div class="prose${st.status === 'running' ? ' streaming' : ''}" ${st.status === 'running' ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
         </li>`).join('')}
       </ol>
       ${r.error ? `<p class="error small">${esc(r.error)}</p>` : ''}
       ${needs ? `<div class="approval row gap"><span class="small">This agent asks for your approval before continuing.</span>
         <button class="btn primary sm" data-action="approve" data-id="${r.id}">Approve</button>
         <button class="btn sm" data-action="reject" data-id="${r.id}">Reject</button></div>` : ''}
+      ${r.status === 'running' ? `<div class="row"><button class="btn sm" data-action="stop" data-id="${r.id}">
+        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg> Stop</button></div>` : ''}
     </div>` : ''}
   </article>`;
 }
@@ -102,8 +107,8 @@ export function render() {
 
   <section>
     <div class="row between section-row"><h2>Activity</h2>
-      ${s.runs.some((r) => ['completed', 'failed', 'rejected'].includes(r.status)) ? '<button class="btn ghost sm" data-action="clear">Clear finished</button>' : ''}</div>
-    <div class="runs">${s.runs.map(runCard).join('') || '<p class="muted small">No runs yet. Give an agent a task above.</p>'}</div>
+      ${s.runs.some((r) => ['completed', 'failed', 'rejected', 'stopped'].includes(r.status)) ? '<button class="btn ghost sm" data-action="clear">Clear finished</button>' : ''}</div>
+    <div class="runs">${s.runs.map((r, i) => runCard(r, i)).join('') || '<p class="muted small">No runs yet. Give an agent a task above.</p>'}</div>
   </section>
 
   ${scheduled.length ? `
@@ -151,9 +156,19 @@ export function bind(root, rerender) {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const { action, id } = el.dataset;
-    if (action === 'toggle-run') { expanded.has(id) ? expanded.delete(id) : expanded.add(id); rerender(); }
+    if (action === 'toggle-run') {
+      const isOpen = el.getAttribute('aria-expanded') === 'true';
+      if (isOpen) { expanded.delete(id); collapsed.add(id); } else { collapsed.delete(id); expanded.add(id); }
+      rerender();
+    }
     else if (action === 'approve') approve(id);
     else if (action === 'reject') reject(id);
     else if (action === 'clear') clearFinished();
+    else if (action === 'stop') { stopRun(id); toast('Run stopped'); }
+    else if (action === 'copy') {
+      const run = getState().runs.find((x) => x.id === id);
+      const text = run?.steps[Number(el.dataset.step)]?.output || '';
+      navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Copy failed'));
+    }
   });
 }

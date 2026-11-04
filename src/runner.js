@@ -5,10 +5,12 @@ import { getState, update, uid, plan, addLedger } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
 
 let liveStatus = null; // null = unknown, true = live model, false = demo
+const API_URL = 'api/run';
+const controllers = new Map(); // runId -> AbortController
 
 export async function checkLive() {
   try {
-    const res = await fetch('/api/run', { method: 'GET' });
+    const res = await fetch(API_URL, { method: 'GET' });
     const data = await res.json();
     liveStatus = Boolean(data.live);
   } catch {
@@ -53,34 +55,78 @@ function demoOutput(agent, task, previous) {
     `*Demo mode: simulated response. Add ANTHROPIC_API_KEY to the deployment to have ${agent.name} produce real work.*`;
 }
 
-async function callAgent(agent, task, previous) {
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Stopped', 'AbortError')); }, { once: true });
+});
+
+// Reads the server's SSE stream, calling onText for each chunk.
+async function readStream(res, onText) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const line = buffer.slice(0, cut).split('\n').find((l) => l.startsWith('data:'));
+      buffer = buffer.slice(cut + 2);
+      if (!line) continue;
+      const evt = JSON.parse(line.slice(5).trim());
+      if (evt.type === 'text') { full += evt.text; onText(full); }
+      else if (evt.type === 'error') throw new Error(evt.error);
+    }
+  }
+  return full;
+}
+
+async function callAgent(agent, task, previous, { signal, onText }) {
   if (liveStatus !== false) {
     try {
-      const res = await fetch('/api/run', {
+      const res = await fetch(API_URL, {
         method: 'POST',
+        signal,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
           context: vaultFor(agent),
           task,
           previous,
+          stream: true,
         }),
       });
       if (res.status === 503) {
         liveStatus = false;
-      } else {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      } else if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         liveStatus = true;
-        return { output: data.output, mode: 'live' };
+        throw new Error(data.error || `Request failed (${res.status})`);
+      } else {
+        liveStatus = true;
+        const output = (res.headers.get('content-type') || '').includes('text/event-stream')
+          ? await readStream(res, onText)
+          : (await res.json()).output;
+        return { output, mode: 'live' };
       }
     } catch (err) {
-      if (liveStatus === true) throw err;
+      if (err.name === 'AbortError' || liveStatus === true) throw err;
       liveStatus = false;
     }
   }
-  await new Promise((r) => setTimeout(r, 700 + Math.random() * 700));
-  return { output: demoOutput(agent, task, previous), mode: 'demo' };
+  // Demo mode: stream a simulated answer word by word.
+  await sleep(400 + Math.random() * 400, signal);
+  const text = demoOutput(agent, task, previous);
+  const words = text.split(/(\s+)/);
+  let out = '';
+  for (let i = 0; i < words.length; i += 6) {
+    out += words.slice(i, i + 6).join('');
+    onText(out);
+    await sleep(40, signal);
+  }
+  return { output: text, mode: 'demo' };
 }
 
 // ---------- run lifecycle ----------
@@ -131,8 +177,25 @@ async function advance(runId) {
   });
 
   const previous = idx > 0 ? run.steps[idx - 1].output : undefined;
+  const controller = new AbortController();
+  controllers.set(runId, controller);
+
+  // Throttle streamed text into state (each update re-renders and persists).
+  let pending = null;
+  let timer = null;
+  const flush = () => {
+    timer = null;
+    if (pending == null) return;
+    const text = pending;
+    pending = null;
+    mutateRun(runId, (r) => { if (r.steps[idx].status === 'running') r.steps[idx].output = text; });
+  };
+  const onText = (text) => { pending = text; if (!timer) timer = setTimeout(flush, 80); };
+
   try {
-    const { output, mode } = await callAgent(agent, run.task, previous);
+    const { output, mode } = await callAgent(agent, run.task, previous, { signal: controller.signal, onText });
+    clearTimeout(timer);
+    controllers.delete(runId);
     mutateRun(runId, (r) => {
       r.steps[idx].output = output;
       r.steps[idx].mode = mode;
@@ -146,12 +209,24 @@ async function advance(runId) {
     });
     if (!agent.approval) advance(runId);
   } catch (err) {
+    clearTimeout(timer);
+    controllers.delete(runId);
+    if (err.name === 'AbortError') return; // stopRun already updated state
     mutateRun(runId, (r) => {
       r.steps[idx].status = 'failed';
       r.status = 'failed';
       r.error = err.message;
     });
   }
+}
+
+export function stopRun(runId) {
+  controllers.get(runId)?.abort();
+  controllers.delete(runId);
+  mutateRun(runId, (r) => {
+    r.steps.forEach((st) => { if (st.status === 'running' || st.status === 'queued') st.status = 'stopped'; });
+    r.status = 'stopped';
+  });
 }
 
 export function approve(runId) {
