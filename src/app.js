@@ -1,5 +1,6 @@
 import { getState, update, subscribe, plan } from './store.js';
-import { checkLive, recoverInterrupted } from './runner.js';
+import { esc } from './ui.js';
+import { checkLive, recoverInterrupted, clearFinished } from './runner.js';
 import * as command from './views/command.js';
 import * as studio from './views/studio.js';
 import * as connect from './views/connect.js';
@@ -43,23 +44,31 @@ function renderView() {
   renderNav();
 }
 
+const STATUS_DOT = { running: 'Running', awaiting_approval: 'Needs approval', failed: 'Failed' };
+
 function renderNav() {
   const s = getState();
-  const pending = s.runs.filter((r) => r.status === 'awaiting_approval').length;
-  const forecasting = s.forecasts.filter((f) => f.job.status === 'running').length;
+  const runId = new URLSearchParams(location.hash.split('?')[1] || '').get('run');
   document.querySelectorAll('[data-route]').forEach((a) => {
-    const on = a.dataset.route === current;
+    const on = a.dataset.route === current || (a.dataset.route === 'new' && current === 'command' && !runId);
     a.classList.toggle('active', on);
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
-  const badge = document.getElementById('approvals-badge');
-  badge.textContent = pending;
-  badge.hidden = pending === 0;
-  const fBadge = document.getElementById('forecast-badge');
-  fBadge.textContent = forecasting;
-  fBadge.hidden = forecasting === 0;
-  document.getElementById('plan-label').textContent = `${plan().label} plan`;
-  document.getElementById('sclv-label').textContent = `${s.wallet.sclv} $SCLV`;
+  const forecasting = s.forecasts.some((f) => f.job.status === 'running');
+  document.getElementById('forecast-badge').hidden = !forecasting;
+
+  // ChatGPT-style history: one line per task, newest first.
+  const list = document.getElementById('recent-list');
+  list.innerHTML = s.runs.slice(0, 30).map((r) => {
+    const flag = STATUS_DOT[r.status];
+    const on = r.id === runId && current === 'command';
+    return `<li><a href="#/command?run=${r.id}" class="${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''} title="${esc(r.task)}">
+      <span class="recent-title">${esc(r.task)}</span>${flag ? `<span class="dot-badge ${r.status}" role="img" aria-label="${flag}"></span>` : ''}</a></li>`;
+  }).join('') || '<li class="muted tiny recent-empty">Your tasks will appear here.</li>';
+
+  document.getElementById('clear-recent').hidden = !s.runs.some((r) => !['running', 'awaiting_approval'].includes(r.status));
+  const left = Math.max(0, plan().credits - s.wallet.creditsUsed);
+  document.getElementById('plan-label').textContent = `${plan().label} plan · ${left} credits left`;
 }
 
 function navigate() {
@@ -71,8 +80,8 @@ function navigate() {
     main.replaceChildren(root);
     ROUTES[current].bind(root, renderView);
     window.scrollTo(0, 0);
-    document.body.classList.remove('nav-open');
   }
+  document.body.classList.remove('nav-open');
   renderView();
 }
 
@@ -80,6 +89,11 @@ window.addEventListener('hashchange', navigate);
 subscribe(() => renderView());
 
 document.getElementById('menu-btn').addEventListener('click', () => document.body.classList.toggle('nav-open'));
+document.getElementById('clear-recent').addEventListener('click', () => {
+  const open = new URLSearchParams(location.hash.split('?')[1] || '').get('run');
+  clearFinished();
+  if (open && !getState().runs.some((r) => r.id === open)) location.hash = '#/command';
+});
 document.getElementById('scrim').addEventListener('click', () => document.body.classList.remove('nav-open'));
 
 navigate();

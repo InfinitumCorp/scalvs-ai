@@ -73,16 +73,15 @@ export function render() {
   <header class="page-head">
     <p class="eyebrow">Predict</p>
     <h1>Forecast what happens next</h1>
-    <p class="lede">Give the swarm your material and a question. Hundreds of persona agents react to it on simulated social platforms, and a ReportAgent turns what they did into a forecast.</p>
-    <p class="small muted" role="status">${live === true ? 'Live: powered by the MiroFish swarm-intelligence engine. Forecasts are simulations of likely reactions, not guarantees.' : live === false ? 'Demo mode: no simulation runs and reports are placeholders. Set MIROFISH_URL to connect a MiroFish engine.' : 'Checking forecasting engine…'}</p>
+    <p class="lede">A swarm of AI personas reacts to your material, then reports what is likely to happen.</p>
+    <p class="fine left" role="status">${live === true ? 'Live: powered by the MiroFish swarm-intelligence engine. Forecasts are simulations of likely reactions, not guarantees.' : live === false ? 'Demo mode: no simulation runs and reports are placeholders. Set MIROFISH_URL to connect a MiroFish engine.' : 'Checking forecasting engine…'}</p>
   </header>
 
   <section class="panel">
-    <div class="panel-head"><h2>New forecast</h2><span class="tag">${cost} AI credits</span></div>
+    <div class="panel-head"><h2>New forecast</h2><span class="tag">${cost} credits</span></div>
     <form id="fc-form" class="form">
       <div>
-        <span class="label">Use case</span>
-        <div class="chips">${FORECAST_PRESETS.map((p) => `<button type="button" class="chip ${form.product === p.product ? 'sel' : ''}" data-action="preset" data-product="${esc(p.product)}" aria-pressed="${form.product === p.product}">${esc(p.product)} · ${esc(p.label)}</button>`).join('')}</div>
+                <div class="chips">${FORECAST_PRESETS.map((p) => `<button type="button" class="chip ${form.product === p.product ? 'sel' : ''}" data-action="preset" data-product="${esc(p.product)}" aria-pressed="${form.product === p.product}">${esc(p.product)} · ${esc(p.label)}</button>`).join('')}</div>
       </div>
       <label>What do you want to predict?
         <textarea name="question" rows="2" maxlength="2000" required>${esc(form.question)}</textarea>

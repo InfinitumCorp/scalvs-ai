@@ -1,12 +1,11 @@
-import { getState, plan } from '../store.js';
-import { TEMPLATES, REWARD_RULES } from '../data.js';
-import { startRun, approve, reject, stopRun, clearFinished, isLive, creditUsage } from '../runner.js';
-import { esc, md, ago, fmt, statusLabel, toast } from '../ui.js';
+import { getState } from '../store.js';
+import { TEMPLATES } from '../data.js';
+import { startRun, approve, reject, stopRun, isLive } from '../runner.js';
+import { esc, md, statusLabel, toast } from '../ui.js';
 import { setDraft } from '../forecaster.js';
 
 let target = null;   // "agent:<id>" | "team:<id>"
 let taskDraft = '';
-const expanded = new Set();
 
 function resolveTarget() {
   const s = getState();
@@ -30,98 +29,85 @@ function exampleFor() {
   return tpl ? `e.g. ${tpl.example}` : 'Describe an outcome…';
 }
 
-const collapsed = new Set(); // newest run is open unless the user closed it
+const selectedRun = () => {
+  const id = new URLSearchParams(location.hash.split('?')[1] || '').get('run');
+  return id ? getState().runs.find((r) => r.id === id) || null : null;
+};
 
-function runCard(r, index) {
-  const open = (index === 0 && !collapsed.has(r.id)) || expanded.has(r.id) || r.status === 'awaiting_approval' || r.status === 'running';
-  const needs = r.status === 'awaiting_approval';
+const ICON = {
+  send: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></svg>',
+};
+
+function message(r, st, i) {
+  const busy = st.status === 'running';
+  const label = st.status === 'done' ? '' : statusLabel[st.status];
+  const tools = st.output && !busy ? `
+    <div class="msg-tools">
+      <button class="tool" data-action="copy" data-id="${r.id}" data-step="${i}" aria-label="Copy ${esc(st.name)}'s answer">Copy</button>
+      ${st.status === 'done' ? `<button class="tool" data-action="forecast" data-id="${r.id}" data-step="${i}" aria-label="Forecast reactions to ${esc(st.name)}'s answer">Forecast this</button>` : ''}
+    </div>` : '';
   return `
-  <article class="run ${esc(r.status)}">
-    <button class="run-head" data-action="toggle-run" data-id="${r.id}" aria-expanded="${open}">
-      <span class="status-pill ${esc(r.status)}">${statusLabel[r.status]}${r.steps.some(s => s.mode === 'demo') ? ' · demo' : ''}</span>
-      <span class="run-title">${esc(r.title)}</span>
-      <span class="muted small">${ago(r.createdAt)}</span>
-    </button>
-    ${open ? `
-    <div class="run-body">
-      <p class="run-task">${esc(r.task)}</p>
-      <ol class="steps">
-        ${r.steps.map((st, i) => `
-        <li class="step ${esc(st.status)}">
-          <div class="step-head"><strong>${esc(st.name)}</strong>
-            <span class="muted small">${statusLabel[st.status]}${st.mode === 'demo' ? ' · demo' : st.mode === 'live' ? ' · live' : ''}</span>
-            ${st.output && st.status !== 'running' ? `<button class="copy" data-action="copy" data-id="${r.id}" data-step="${i}" aria-label="Copy ${esc(st.name)}'s output">Copy</button>` : ''}${st.output && st.status === 'done' ? `<button class="copy" data-action="forecast" data-id="${r.id}" data-step="${i}" aria-label="Forecast reactions to ${esc(st.name)}'s output">Forecast this</button>` : ''}</div>
-          ${st.status === 'running' && !st.output ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
-          ${st.output ? `<div class="prose${st.status === 'running' ? ' streaming' : ''}" ${st.status === 'running' ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
-        </li>`).join('')}
-      </ol>
-      ${r.error ? `<p class="error small">${esc(r.error)}</p>` : ''}
-      ${needs ? `<div class="approval row gap"><span class="small">This agent asks for your approval before continuing.</span>
-        <button class="btn primary sm" data-action="approve" data-id="${r.id}">Approve</button>
-        <button class="btn sm" data-action="reject" data-id="${r.id}">Reject</button></div>` : ''}
-      ${r.status === 'running' ? `<div class="row"><button class="btn sm" data-action="stop" data-id="${r.id}">
-        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg> Stop</button></div>` : ''}
+  <div class="msg agent ${esc(st.status)}">
+    <div class="who">${esc(st.name)}${label ? ` <span class="muted">· ${esc(label)}</span>` : ''}${st.mode === 'demo' ? ' <span class="muted">· demo</span>' : ''}</div>
+    ${busy && !st.output ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
+    ${st.output ? `<div class="prose${busy ? ' streaming' : ''}" ${busy ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
+    ${tools}
+  </div>`;
+}
+
+function thread(r) {
+  return `
+  <div class="thread">
+    <div class="msg user"><div class="bubble">${esc(r.task)}</div></div>
+    ${r.steps.map((st, i) => (st.status === 'queued' ? `<div class="msg agent queued"><div class="who">${esc(st.name)} <span class="muted">· Up next</span></div></div>` : message(r, st, i))).join('')}
+    ${r.error ? `<p class="error small">${esc(r.error)}</p>` : ''}
+    ${r.status === 'awaiting_approval' ? `
+    <div class="approval">
+      <span class="small">${esc(r.steps[r.current]?.name || 'This agent')} asks for your approval before continuing.</span>
+      <div class="row gap"><button class="btn primary sm" data-action="approve" data-id="${r.id}">Approve</button>
+      <button class="btn sm" data-action="reject" data-id="${r.id}">Reject</button></div>
     </div>` : ''}
-  </article>`;
+  </div>`;
+}
+
+function composer(s, running, live) {
+  return `
+  <form id="run-form" class="composer">
+    <textarea name="task" rows="1" maxlength="6000" required placeholder="Give your agents a task" title="${esc(exampleFor())}" aria-label="Task">${esc(taskDraft)}</textarea>
+    <div class="composer-bar">
+      <select name="target" aria-label="Agent or team" class="pill-select">
+        ${s.agents.length ? `<optgroup label="Agents">${s.agents.map((a) => `<option value="agent:${a.id}" ${target === `agent:${a.id}` ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</optgroup>` : ''}
+        ${s.teams.length ? `<optgroup label="Teams">${s.teams.map((t) => `<option value="team:${t.id}" ${target === `team:${t.id}` ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
+      </select>
+      ${running
+        ? `<button class="send" type="button" data-action="stop" data-id="${running.id}" aria-label="Stop task">${ICON.stop}</button>`
+        : `<button class="send" type="submit" aria-label="Run task" ${s.agents.length ? '' : 'disabled'}>${ICON.send}</button>`}
+    </div>
+  </form>
+  <p class="fine" role="status">${live === true ? 'Live AI drafts. Connections and rewards are simulated in this prototype.' : live === false ? 'Demo mode. Answers are simulated.' : '&nbsp;'}</p>`;
 }
 
 export function render() {
   resolveTarget();
   const s = getState();
-  const p = plan();
-  const used = s.wallet.creditsUsed;
-  const usage = creditUsage();
-  const pct = Math.min(100, (used / p.credits) * 100);
-  const approvals = s.runs.filter((r) => r.status === 'awaiting_approval');
-  const active = s.runs.filter((r) => r.status === 'running').length;
-  const scheduled = s.agents.filter((a) => a.schedule !== 'none');
   const live = isLive();
+  const r = selectedRun();
+  const running = r && r.status === 'running' ? r : null;
 
+  if (!r) {
+    return `
+    <section class="home">
+      <h1 class="hero-title">What should your agents do?</h1>
+      ${composer(s, null, live)}
+      ${s.agents.length ? '' : '<p class="small muted center">Create an agent in <a href="#/studio">Agents</a> first.</p>'}
+    </section>`;
+  }
   return `
-  <section class="hero">
-    <h1 class="hero-title">What should your agents do?</h1>
-    <p class="small muted" role="status">${live === true ? 'Live AI drafts. App connections are simulated; external actions and contribution rewards are not verified.' : live === false ? 'Demo mode: outputs and connections are simulated. Tasks do not earn tokens.' : 'Checking AI availability…'}</p>
-    <form id="run-form" class="composer">
-      <textarea name="task" rows="2" maxlength="6000" required placeholder="${esc(exampleFor())}" aria-label="Task">${esc(taskDraft)}</textarea>
-      <div class="composer-bar">
-        <select name="target" aria-label="Agent or team" class="pill-select">
-          ${s.agents.length ? `<optgroup label="Agents">${s.agents.map((a) => `<option value="agent:${a.id}" ${target === `agent:${a.id}` ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</optgroup>` : ''}
-          ${s.teams.length ? `<optgroup label="Teams">${s.teams.map((t) => `<option value="team:${t.id}" ${target === `team:${t.id}` ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
-        </select>
-        <span class="muted small mode">${live === true ? 'Live · Claude' : live === false ? 'Demo mode' : ''}</span>
-        <button class="send" type="submit" aria-label="Run task" ${s.agents.length ? '' : 'disabled'}>
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-      </div>
-    </form>
-    ${s.agents.length ? '' : '<p class="small muted center">Create an agent in <a href="#/studio">Agent Studio</a> first.</p>'}
-  </section>
-
-  <div class="stats">
-    <div class="stat"><span class="stat-n">${active}</span><span class="muted small">Running</span></div>
-    <div class="stat"><span class="stat-n">${approvals.length}</span><span class="muted small">Awaiting approval</span></div>
-    <div class="stat"><span class="stat-n">${scheduled.length}</span><span class="muted small">Scheduled</span></div>
-    <div class="stat wide">
-      <div class="row between"><span class="muted small">AI credits this month</span><span class="small">${fmt(used)} / ${fmt(p.credits)}</span></div>
-      <div class="meter" role="progressbar" aria-valuenow="${used}" aria-valuemin="0" aria-valuemax="${p.credits}"><span style="width:${pct}%"></span></div>
-      <span class="muted small">${REWARD_RULES.creditsPerRun} credits per agent step · ${p.label} plan</span>
-      <span class="muted small">${fmt(usage.reserved)} reserved · ${fmt(usage.available)} available · resets monthly (UTC)</span>
-    </div>
-  </div>
-
-  <section>
-    <div class="row between section-row"><h2>Activity</h2>
-      ${s.runs.some((r) => ['completed', 'failed', 'rejected', 'stopped'].includes(r.status)) ? '<button class="btn ghost sm" data-action="clear">Clear finished</button>' : ''}</div>
-    <div class="runs">${s.runs.map((r, i) => runCard(r, i)).join('') || '<p class="muted small">No runs yet. Give an agent a task above.</p>'}</div>
-  </section>
-
-  ${scheduled.length ? `
-  <section class="panel">
-    <div class="panel-head"><h2>Schedules</h2><span class="tag">simulated</span></div>
-    <ul class="list">${scheduled.map((a) => `
-      <li class="list-row"><div class="list-main"><div><strong>${esc(a.name)}</strong><p class="muted small">Runs ${esc(a.schedule)}</p></div></div>
-      <a class="btn sm" href="#/command?agent=${a.id}">Run now</a></li>`).join('')}</ul>
-  </section>` : ''}`;
+  <section class="chat">
+    ${thread(r)}
+    <div class="dock">${composer(s, running, live)}</div>
+  </section>`;
 }
 
 export function bind(root, rerender) {
@@ -133,7 +119,7 @@ export function bind(root, rerender) {
     }
   });
   root.addEventListener('change', (e) => {
-    if (e.target.name === 'target') { target = e.target.value; history.replaceState(null, '', '#/command'); rerender(); }
+    if (e.target.name === 'target') { target = e.target.value; rerender(); }
   });
   root.addEventListener('keydown', (e) => {
     if (e.target.name === 'task' && e.key === 'Enter' && !e.shiftKey) {
@@ -154,20 +140,14 @@ export function bind(root, rerender) {
     const res = startRun({ task, agentIds, title });
     if (res.error) { toast(res.error); return; }
     taskDraft = '';
-    rerender();
+    location.hash = `#/command?run=${res.run.id}`;
   });
   root.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const { action, id } = el.dataset;
-    if (action === 'toggle-run') {
-      const isOpen = el.getAttribute('aria-expanded') === 'true';
-      if (isOpen) { expanded.delete(id); collapsed.add(id); } else { collapsed.delete(id); expanded.add(id); }
-      rerender();
-    }
-    else if (action === 'approve') approve(id);
+    if (action === 'approve') approve(id);
     else if (action === 'reject') reject(id);
-    else if (action === 'clear') clearFinished();
     else if (action === 'stop') { stopRun(id); toast('Run stopped'); }
     else if (action === 'forecast') {
       const run = getState().runs.find((x) => x.id === id);
