@@ -8,7 +8,7 @@ This is the first working prototype of the four-step flow from the [product page
 |---|---|---|
 | 01 Create | **Agent Studio** | Six templates (Researcher, Writer, Coder, Sales rep, Operator, Support); name, role, instructions, tools, Context Vault, approval and schedule per agent; plan-based agent limits; multi-agent **teams** run in sequence (/CNDCTR/-style), each agent building on the previous output. |
 | 02 Connect | **Connect** | Toggle connections to your apps and Infinitum products (simulated); **Nexus Context Vault** entries with per-product permissions that agents read when memory is on. |
-| 03 Run | **Command Center** | Chat-style composer to give an agent or team a task; live run timeline; **human approval** gates; AI-credit meter per plan; schedules list. |
+| 03 Run | **Command Center** | Chat-style composer to give an agent or team a task; agent output **streams in live**; **Stop** a running task; **human approval** gates; copy any agent's output; AI-credit meter per plan; schedules list. |
 | 04 Earn | **Earnings & Data Wallet** | Activity credits and capped **$SCLV** rewards on verified runs, ad revenue share opt-in (Free plan), data licensing with an 85% share, ledger, plan switcher. |
 
 > **Simulated economy.** $SCLV, balances, sales and the ledger are mock values stored in the browser. No tokens, wallets, blockchain transactions or payments are involved. Completing a demo or live AI draft does not verify a contribution and does not award activity credits or tokens. Contribution verification and settlement remain unimplemented.
@@ -17,31 +17,32 @@ This is the first working prototype of the four-step flow from the [product page
 
 Agent steps run through `api/run.js`, a Vercel serverless function that calls the Claude Messages API.
 
-- **Live:** set `ANTHROPIC_API_KEY` in the Vercel project (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`). Agents then produce real work.
+- **Live:** set `ANTHROPIC_API_KEY` in the Vercel project (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
 - **Demo:** with no key the function answers `503` and the app falls back to simulated agent output, so everything still works end to end.
 
 The composer shows which mode is active.
 
-Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. Approval applies only to the currently pending draft and cannot advance a team twice. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
+Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. A streamed answer counts only when the stream ends with an explicit completion event; provider stream errors, early disconnects and text-less streams fail the step. Approval applies only to the currently pending draft and cannot advance a team twice. **Stop** aborts the in-flight request, marks the run stopped and releases queued steps' credit reservations (the started step keeps its charge); a stopped run cannot be approved or completed afterwards. Runs left `running` by a page reload are stopped on the next load. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
 
 ## Validation
 
 Prototype credits reset by UTC calendar month. Queued steps in active teams reserve credits; rejecting or failing a run releases its unused reservation. Plan changes are rechecked before each step. Started steps consume prototype credits even if the provider fails; these credits are not provider-token billing. Limits are browser-local and are not a production billing or authorization boundary. Active and approval-pending runs are retained independently of the 40-item finished-history limit.
 
-Run `npm test` for agent lifecycle and API regression tests. Provider responses are fixtures; the tests do not establish live provider connectivity. Browser verification covers demo completion, visible demo labeling and unchanged reward balances.
+Run `npm test` for agent lifecycle, streaming relay, Stop and API regression tests, and `npm run check` for a syntax check. Provider responses are fixtures; the tests do not establish live provider connectivity. Browser verification covers demo completion, visible demo labeling and unchanged reward balances.
 
 ## Run locally
 
 No dependencies, no build step. Node 20+.
 
 ```bash
+cd scalvs
 npm run dev                                  # demo mode, http://localhost:3000
 ANTHROPIC_API_KEY=sk-ant-... npm run dev     # live mode
 ```
 
 ## Deploy
 
-Import the repo in Vercel (framework preset: **Other**, no build command, output directory = root). Static files are served as-is and `api/run.js` becomes `/api/run`.
+Import the repo in Vercel and set **Root Directory** to `scalvs` (framework preset: **Other**, no build command). Static files are served as-is and `api/run.js` becomes `/api/run`. All paths are relative, so the static app also works from any subfolder (it falls back to demo mode where `/api/run` isn't deployed).
 
 ## Structure
 
@@ -62,7 +63,7 @@ dev-server.mjs        zero-dependency local server
 - Accounts (Cumulus://ID) and a database so agents, runs and the vault sync across devices
 - Real connectors (email, Slack, GitHub) behind OAuth, with approvals enforced server-side
 - Server-side scheduler for scheduled agents
-- Streaming responses and tool use in the agent runtime
+- Tool use in the agent runtime (web search, files) with per-tool approval
 
 © 2026 Infinitum Corporation
 

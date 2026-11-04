@@ -1,14 +1,17 @@
-// Agent runtime on the client: sequences agents, handles approvals,
-// meters prototype credits. Draft completion never settles rewards.
+// Agent runtime on the client: sequences agents, streams output, handles
+// approvals and stops, meters prototype credits. Draft completion never
+// settles rewards.
 
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
 
 let liveStatus = null; // null = unknown, true = live model, false = demo
+const API_URL = 'api/run'; // relative, so the app also works from a subfolder
+const controllers = new Map(); // runId -> AbortController for the active step
 
 export async function checkLive() {
   try {
-    const res = await fetch('/api/run', { method: 'GET' });
+    const res = await fetch(API_URL, { method: 'GET' });
     const data = await res.json();
     liveStatus = Boolean(data.live);
   } catch {
@@ -47,43 +50,98 @@ function demoOutput(agent, task, previous) {
     `*Demo mode: simulated response. Add ANTHROPIC_API_KEY to the deployment to have ${agent.name} produce real work.*`;
 }
 
-async function callAgent(agent, task, previous) {
-  if (liveStatus !== false) {
-    try {
-      const res = await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
-          context: vaultFor(agent),
-          task,
-          previous,
-        }),
-      });
-      if (res.status === 503) {
-        liveStatus = false;
-      } else {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-        if (data.mode !== 'live' || typeof data.output !== 'string' || !data.output.trim()) {
-          throw new Error('The model returned no valid output. Please retry.');
-        }
-        liveStatus = true;
-        return { output: data.output, mode: 'live' };
-      }
-    } catch (err) {
-      throw err;
+const abortError = () => new DOMException('Stopped', 'AbortError');
+
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) return reject(abortError());
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); reject(abortError()); }, { once: true });
+});
+
+// Reads the server's SSE stream, calling onText with the text so far.
+// Succeeds only on an explicit "done" event; anything else is a failure.
+export async function readStream(res, onText = () => {}) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+  let finished = false;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    let cut;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const line = buffer.slice(0, cut).split('\n').find((l) => l.startsWith('data:'));
+      buffer = buffer.slice(cut + 2);
+      if (!line) continue;
+      let evt;
+      try { evt = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (evt.type === 'text' && typeof evt.text === 'string') { full += evt.text; onText(full); }
+      else if (evt.type === 'error') { reader.cancel().catch(() => {}); throw new Error(evt.error || 'The model stream failed. Please retry.'); }
+      else if (evt.type === 'done') finished = true;
     }
   }
-  await new Promise((r) => setTimeout(r, 700 + Math.random() * 700));
-  return { output: demoOutput(agent, task, previous), mode: 'demo' };
+  if (!finished) throw new Error('The model stream ended early. Please retry.');
+  return full;
+}
+
+async function callAgent(agent, task, previous, { signal, onText = () => {} } = {}) {
+  if (liveStatus !== false) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
+        context: vaultFor(agent),
+        task,
+        previous,
+        stream: true,
+      }),
+    });
+    if (res.status === 503) {
+      liveStatus = false;
+    } else {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Request failed (${res.status})`);
+      }
+      let output;
+      if ((res.headers.get('content-type') || '').includes('text/event-stream')) {
+        output = await readStream(res, onText);
+      } else {
+        const data = await res.json();
+        if (data.mode !== 'live') throw new Error('The model returned no valid output. Please retry.');
+        output = data.output;
+      }
+      if (typeof output !== 'string' || !output.trim()) {
+        throw new Error('The model returned no valid output. Please retry.');
+      }
+      liveStatus = true;
+      return { output, mode: 'live' };
+    }
+  }
+  // Demo mode: stream a simulated answer a few words at a time.
+  await sleep(400 + Math.random() * 400, signal);
+  const text = demoOutput(agent, task, previous);
+  const words = text.split(/(\s+)/);
+  let out = '';
+  for (let i = 0; i < words.length; i += 6) {
+    out += words.slice(i, i + 6).join('');
+    onText(out);
+    await sleep(40, signal);
+  }
+  return { output: text, mode: 'demo' };
 }
 
 // ---------- run lifecycle ----------
+const isActive = (r) => r.status === 'running' || r.status === 'awaiting_approval';
+
 export function creditUsage() {
   const s = getState();
   const reserved = s.runs
-    .filter(r => r.status === 'running' || r.status === 'awaiting_approval')
+    .filter(isActive)
     .reduce((sum, r) => sum + r.steps.filter(step => step.status === 'queued').length * REWARD_RULES.creditsPerRun, 0);
   return { used: s.wallet.creditsUsed, reserved, available: Math.max(0, plan().credits - s.wallet.creditsUsed - reserved) };
 }
@@ -92,7 +150,6 @@ export function startRun({ task, agentIds, title }) {
   if (typeof task !== 'string' || !task.trim() || task.length > 6000) return { error: 'Enter a task between 1 and 6000 characters.' };
   if (!Array.isArray(agentIds) || !agentIds.length || agentIds.some(id => !findAgent(id))) return { error: 'Choose existing agents for every team step.' };
   task = task.trim();
-  const s = getState();
   const steps = agentIds.map(findAgent).filter(Boolean);
   if (!steps.length) return { error: 'Choose an agent or team.' };
   const needed = steps.length * REWARD_RULES.creditsPerRun;
@@ -111,7 +168,7 @@ export function startRun({ task, agentIds, title }) {
   update((st) => {
     st.runs.unshift(run);
     let finished = 0;
-    st.runs = st.runs.filter(r => r.status === 'running' || r.status === 'awaiting_approval' || finished++ < 40);
+    st.runs = st.runs.filter(r => isActive(r) || finished++ < 40);
   });
   advance(run.id);
   return { run };
@@ -133,7 +190,7 @@ async function advance(runId) {
   const step = run.steps[idx];
   const agent = findAgent(step.agentId);
   if (!agent) {
-    mutateRun(runId, (r) => { r.status = 'failed'; r.error = 'Agent was deleted.'; });
+    mutateRun(runId, (r) => { r.status = 'failed'; r.error = 'Agent was deleted.'; r.steps[idx].status = 'failed'; });
     return;
   }
   // Check again after approvals or a plan change. Never charge beyond the limit.
@@ -147,9 +204,28 @@ async function advance(runId) {
   });
 
   const previous = idx > 0 ? run.steps[idx - 1].output : undefined;
+  const controller = new AbortController();
+  controllers.set(runId, controller);
+  const stillRunning = (r) => !controller.signal.aborted && r.status === 'running' && r.steps[idx].status === 'running';
+
+  // Throttle streamed text into state (each update re-renders and persists).
+  let pending = null;
+  let timer = null;
+  const flush = () => {
+    timer = null;
+    if (pending == null) return;
+    const text = pending;
+    pending = null;
+    mutateRun(runId, (r) => { if (stillRunning(r)) r.steps[idx].output = text; });
+  };
+  const onText = (text) => { pending = text; if (!timer) timer = setTimeout(flush, 80); };
+
   try {
-    const { output, mode } = await callAgent(agent, run.task, previous);
+    const { output, mode } = await callAgent(agent, run.task, previous, { signal: controller.signal, onText });
+    clearTimeout(timer);
+    let next = false;
     mutateRun(runId, (r) => {
+      if (!stillRunning(r)) return;
       r.steps[idx].output = output;
       r.steps[idx].mode = mode;
       if (agent.approval) {
@@ -158,16 +234,47 @@ async function advance(runId) {
       } else {
         r.steps[idx].status = 'done';
         r.current = idx + 1;
+        next = true;
       }
     });
-    if (!agent.approval) advance(runId);
+    if (next) advance(runId);
   } catch (err) {
+    clearTimeout(timer);
+    if (controller.signal.aborted || err?.name === 'AbortError') return; // stopRun already updated state
     mutateRun(runId, (r) => {
+      if (!stillRunning(r)) return;
       r.steps[idx].status = 'failed';
       r.status = 'failed';
-      r.error = err.message;
+      r.error = err?.message || 'The agent step failed. Please retry.';
     });
+  } finally {
+    if (controllers.get(runId) === controller) controllers.delete(runId);
   }
+}
+
+// Stops a running or approval-pending run. The started step keeps its credit
+// charge; queued steps are released.
+export function stopRun(runId, reason) {
+  const target = getState().runs.find(r => r.id === runId);
+  if (!target || !isActive(target)) return;
+  controllers.get(runId)?.abort();
+  controllers.delete(runId);
+  mutateRun(runId, (r) => {
+    r.steps.forEach((st) => {
+      if (st.status === 'running' || st.status === 'queued' || st.status === 'awaiting_approval') st.status = 'stopped';
+    });
+    r.status = 'stopped';
+    r.finishedAt = Date.now();
+    if (reason) r.error = reason;
+  });
+}
+
+// Runs persisted as "running" with no live controller were cut off by a page
+// reload. Stop them so they no longer hold credit reservations.
+export function recoverInterrupted() {
+  getState().runs
+    .filter(r => r.status === 'running' && !controllers.has(r.id))
+    .forEach(r => stopRun(r.id, 'Interrupted when the page was closed or reloaded.'));
 }
 
 export function approve(runId) {
@@ -200,6 +307,5 @@ function complete(runId) {
 }
 
 export function clearFinished() {
-  update((st) => { st.runs = st.runs.filter((r) => r.status === 'running' || r.status === 'awaiting_approval'); });
+  update((st) => { st.runs = st.runs.filter(isActive); });
 }
-

@@ -268,3 +268,12 @@ button.chip:hover { border-color: var(--line); }
   .mode + .send { margin-left: auto; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* streaming + copy */
+.step-head { flex-wrap: wrap; }
+.copy { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 12px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+.copy:hover { background: var(--soft); color: var(--ink); }
+.prose.streaming > :last-child::after { content: ""; display: inline-block; width: 7px; height: 14px; margin-left: 2px; vertical-align: -2px; background: var(--ink); border-radius: 1px; animation: blink 1s infinite; }
+.status-pill.stopped { background: var(--soft); color: var(--muted); }
+.step.stopped { border-left-color: #cfcfcf; }
+.composer textarea:focus-visible { outline: none; }

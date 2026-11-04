@@ -1,13 +1,18 @@
 // SCALVS.ai agent runtime — Vercel serverless function.
-// POST /api/run  { agent, task, context?, previous? }  ->  { mode, output, usage }
+// POST /api/run  { agent, task, context?, previous?, stream? }
+//   stream=false -> { mode, model, output, usage }
+//   stream=true  -> text/event-stream of {type:"text"|"done"|"error"} events
 //
 // Runs one agent step against the Claude Messages API using ANTHROPIC_API_KEY.
 // When no key is configured it answers 503 { mode: "demo" } and the client
 // falls back to its built-in simulated runner, so the prototype still works.
+// Provider failures and empty responses are errors, never simulated successes.
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
+const apiUrl = () => `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '')}/v1/messages`;
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const MAX_TASK_CHARS = 6000;
+const TIMEOUT_MS = 45000;
+const STREAM_TIMEOUT_MS = 120000;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -18,6 +23,17 @@ function json(body, status = 200) {
 
 function clip(value, max) {
   return String(value ?? '').slice(0, max);
+}
+
+function combineSignals(...signals) {
+  const list = signals.filter(Boolean);
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(list);
+  const controller = new AbortController();
+  for (const s of list) {
+    if (s.aborted) { controller.abort(s.reason); break; }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
 }
 
 export function buildSystemPrompt(agent = {}, context = []) {
@@ -56,42 +72,117 @@ export async function POST(request) {
     ? `Task:\n${task}\n\nOutput from the previous agent in this team, to build on:\n${clip(body.previous, 8000)}`
     : task;
 
+  const stream = body.stream === true;
+
   try {
-  const upstream = await fetch(API_URL, {
-    signal: AbortSignal.timeout(45000),
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: process.env.SCALVS_MODEL || DEFAULT_MODEL,
-      max_tokens: 1500,
-      system: buildSystemPrompt(body.agent, body.context),
-      messages: [{ role: 'user', content: userContent }],
-    }),
-  });
+    const upstream = await fetch(apiUrl(), {
+      method: 'POST',
+      signal: combineSignals(request.signal, AbortSignal.timeout(stream ? STREAM_TIMEOUT_MS : TIMEOUT_MS)),
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: process.env.SCALVS_MODEL || DEFAULT_MODEL,
+        max_tokens: 1500,
+        stream,
+        system: buildSystemPrompt(body.agent, body.context),
+        messages: [{ role: 'user', content: userContent }],
+      }),
+    });
 
-  if (!upstream.ok) {
-    return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
-  }
+    if (!upstream.ok) {
+      return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
+    }
 
-  const data = await upstream.json();
-  const output = (Array.isArray(data.content) ? data.content : [])
-    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
+    if (stream) return relayStream(upstream);
 
-  if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
-  return json({ mode: 'live', model: data.model, output, usage: data.usage || null });
+    const data = await upstream.json();
+    const output = (Array.isArray(data.content) ? data.content : [])
+      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('\n')
+      .trim();
+
+    if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
+    return json({ mode: 'live', model: data.model, output, usage: data.usage || null });
   } catch {
     return json({ error: 'The model request could not complete. Please retry.' }, 502);
   }
 }
 
+// Re-emit Anthropic's SSE stream as a minimal one for the client:
+//   data: {"type":"text","text":"..."}             (repeated)
+//   data: {"type":"done","model":..,"usage":{..}}   once, only after message_stop with text
+//   data: {"type":"error","error":"..."}            terminal; no "done" follows
+export function relayStream(upstream) {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const send = (controller, obj) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+  const body = new ReadableStream({
+    async start(controller) {
+      const reader = upstream.body.getReader();
+      let buffer = '';
+      let model = null;
+      let sawText = false;
+      let stopped = false;
+      let failed = null;
+      const usage = {};
+
+      const handle = (data) => {
+        if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta' && typeof data.delta.text === 'string') {
+          if (data.delta.text.trim()) sawText = true;
+          send(controller, { type: 'text', text: data.delta.text });
+        } else if (data.type === 'message_start') {
+          model = data.message?.model || null;
+          Object.assign(usage, data.message?.usage || {});
+        } else if (data.type === 'message_delta') {
+          Object.assign(usage, data.usage || {});
+        } else if (data.type === 'message_stop') {
+          stopped = true;
+        } else if (data.type === 'error') {
+          failed = 'The model stream failed. Please retry.';
+        }
+      };
+
+      try {
+        while (!failed && !stopped) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+          let cut;
+          while (!failed && !stopped && (cut = buffer.indexOf('\n\n')) >= 0) {
+            const event = buffer.slice(0, cut);
+            buffer = buffer.slice(cut + 2);
+            const line = event.split('\n').find((l) => l.startsWith('data:'));
+            if (!line) continue;
+            let data;
+            try { data = JSON.parse(line.slice(5).trim()); } catch { continue; }
+            handle(data);
+          }
+        }
+        if (!failed && !stopped) failed = 'The model stream ended early. Please retry.';
+        if (!failed && !sawText) failed = 'The model returned no text. Please retry.';
+      } catch {
+        failed = 'The model stream was interrupted. Please retry.';
+      }
+
+      reader.cancel().catch(() => {});
+      try {
+        send(controller, failed ? { type: 'error', error: failed } : { type: 'done', model, usage });
+        controller.close();
+      } catch { /* client already disconnected */ }
+    },
+    cancel() { upstream.body.cancel().catch(() => {}); },
+  });
+
+  return new Response(body, {
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' },
+  });
+}
+
 export function GET() {
   return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) });
 }
-

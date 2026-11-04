@@ -51,7 +51,7 @@ export function md(src) {
 
 export const statusLabel = {
   queued: 'Queued', running: 'Running', awaiting_approval: 'Needs approval',
-  done: 'Done', completed: 'Completed', failed: 'Failed', rejected: 'Rejected',
+  done: 'Done', completed: 'Completed', failed: 'Failed', rejected: 'Rejected', stopped: 'Stopped',
 };
 
 export function toast(message) {

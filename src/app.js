@@ -1,5 +1,5 @@
 import { getState, update, subscribe, plan } from './store.js';
-import { checkLive } from './runner.js';
+import { checkLive, recoverInterrupted } from './runner.js';
 import * as command from './views/command.js';
 import * as studio from './views/studio.js';
 import * as connect from './views/connect.js';
@@ -77,4 +77,5 @@ document.getElementById('menu-btn').addEventListener('click', () => document.bod
 document.getElementById('scrim').addEventListener('click', () => document.body.classList.remove('nav-open'));
 
 navigate();
+recoverInterrupted();
 checkLive().then(() => renderView());
