@@ -1,6 +1,46 @@
 import { getState, update, addLedger, reset } from '../store.js';
 import { PLANS, DATASETS, REWARD_RULES } from '../data.js';
 import { esc, fmt, ago, toast } from '../ui.js';
+import {
+  BUYERS, CATEGORIES, NEVER_SOLD, EXCHANGE_PRODUCTS, SHARE, SCLV_PER_USD, MIN_COHORT,
+  ensureExchange, hasConsent, setConsent, withdrawAll, available, quoteSale, applySale,
+} from '../exchange.js';
+
+// Global Privacy Control: a legally recognized "do not sell" signal.
+const gpc = () => typeof navigator !== 'undefined' && navigator.globalPrivacyControl === true;
+let saleBuyer = 'ads';
+
+function exchangePanel(s) {
+  const ex = ensureExchange(s.wallet);
+  const avail = available(s, ex);
+  const blockedByGpc = gpc();
+  const anyConsent = Object.keys(ex.consent).length > 0;
+  const quote = quoteSale(s, ex, saleBuyer, { gpc: blockedByGpc });
+  return `
+  <section class="panel" id="exchange">
+    <div class="panel-head"><h2>Data exchange</h2><span class="tag">you keep ${SHARE * 100}% · paid in $SCLV</span></div>
+    <p class="small">You create data by using Infinitum products. If you allow it, Infinitum sells it in de-identified segments, pooled with at least ${fmt(MIN_COHORT)} other people, and pays you ${SHARE * 100}% of the sale in $SCLV. Everything is off until you turn it on, and you can turn it off at any time.</p>
+    ${blockedByGpc ? '<p class="notice small">Your browser sends Global Privacy Control. We treat it as an opt-out, so none of your data is sold.</p>' : ''}
+    <div class="table-wrap"><table class="table consent">
+      <thead><tr><th>Your data</th><th class="num">Ready</th>${BUYERS.map((b) => `<th class="center" title="${esc(b.desc)}">${esc(b.name)}</th>`).join('')}</tr></thead>
+      <tbody>${CATEGORIES.map((c) => `
+        <tr><td><strong>${esc(c.name)}</strong><p class="muted tiny">${esc(c.desc)}</p></td>
+          <td class="num">${fmt(avail[c.id])}</td>
+          ${BUYERS.map((b) => `<td class="center"><input type="checkbox" data-action="consent" data-cat="${c.id}" data-buyer="${b.id}" aria-label="Allow ${esc(c.name)} to be sold to ${esc(b.name)}" ${hasConsent(ex, c.id, b.id) ? 'checked' : ''} ${blockedByGpc ? 'disabled' : ''}></td>`).join('')}
+        </tr>`).join('')}
+      </tbody></table></div>
+    <div class="row gap wrap">
+      <label class="inline">Sell to
+        <select data-action="sale-buyer">${BUYERS.map((b) => `<option value="${b.id}" ${saleBuyer === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
+      </label>
+      <button class="btn sm primary" data-action="sale" ${quote.blocked ? 'disabled' : ''}>Simulate sale${quote.blocked ? '' : ` · +${fmt(quote.sclv, 2)} $SCLV`}</button>
+      ${anyConsent ? '<button class="btn ghost sm" data-action="withdraw-all">Withdraw all consent</button>' : ''}
+    </div>
+    ${quote.blocked ? `<p class="muted small">${esc(quote.blocked)}</p>` : ''}
+    <details class="small"><summary>Never sold, whatever you choose</summary><ul class="plain">${NEVER_SOLD.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>
+    <details class="small"><summary>Which products contribute</summary><p class="muted">${EXCHANGE_PRODUCTS.map(esc).join(', ')}. Only SCALVS.ai is connected in this prototype. Defense, identity and network products never contribute.</p></details>
+  </section>`;
+}
 
 export function render() {
   const s = getState();
@@ -15,7 +55,7 @@ export function render() {
   </header>
 
   <div class="stats">
-    <div class="stat"><span class="stat-n">${fmt(w.sclv)}</span><span class="muted small">$SCLV (simulated)</span></div>
+    <div class="stat"><span class="stat-n">${fmt(w.sclv, Number.isInteger(w.sclv) ? 0 : 2)}</span><span class="muted small">$SCLV (simulated)</span></div>
     <div class="stat"><span class="stat-n">${fmt(w.activity)}</span><span class="muted small">Activity credits</span></div>
     <div class="stat"><span class="stat-n">$${fmt(w.usd, 2)}</span><span class="muted small">Revenue share</span></div>
     <div class="stat"><span class="stat-n">${fmt(capLeft)}</span><span class="muted small">$SCLV left in weekly cap</span></div>
@@ -30,9 +70,11 @@ export function render() {
     </ul>
   </section>
 
+  ${exchangePanel(s)}
+
   <section class="panel">
     <div class="panel-head"><h2>Ad revenue sharing</h2><span class="tag">${s.plan === 'free' ? 'Free plan' : 'Not available on paid plans'}</span></div>
-    <p class="small muted">Opt into sponsored placements in the dashboard and receive a share. Ads never appear in documents, AI answers or workflows.</p>
+    <p class="small muted">Opt into sponsored placements in the dashboard and receive your share in $SCLV. Ads never appear in documents, AI answers or workflows.</p>
     <div class="row gap">
       <label class="switch"><input type="checkbox" data-action="ads" ${w.adsOptIn ? 'checked' : ''} ${s.plan === 'free' ? '' : 'disabled'}><span></span> Show sponsored placements</label>
       ${w.adsOptIn && s.plan === 'free' ? '<button class="btn sm" data-action="ads-day">Simulate a day</button>' : ''}
@@ -61,7 +103,7 @@ export function render() {
   <section class="panel">
     <div class="panel-head"><h2>Ledger</h2><span class="tag">would settle on Firmament Network</span></div>
     ${w.ledger.length ? `<table class="table"><thead><tr><th>When</th><th>What</th><th class="num">Amount</th></tr></thead><tbody>
-      ${w.ledger.map((t) => `<tr><td class="muted">${ago(t.at)}</td><td>${esc(t.note)}</td><td class="num">+${fmt(t.amount, t.unit === 'USD' ? 2 : 0)} ${esc(t.unit)}</td></tr>`).join('')}
+      ${w.ledger.map((t) => `<tr><td class="muted">${ago(t.at)}</td><td>${esc(t.note)}</td><td class="num">+${fmt(t.amount, Number.isInteger(t.amount) ? 0 : 2)} ${esc(t.unit)}</td></tr>`).join('')}
     </tbody></table>` : '<p class="muted small">No simulated transactions. Task completion does not create rewards.</p>'}
   </section>
 
@@ -85,19 +127,42 @@ export function render() {
 
 export function bind(root) {
   root.addEventListener('change', (e) => {
-    if (e.target.dataset.action === 'ads') {
-      update((st) => { st.wallet.adsOptIn = e.target.checked; });
+    const t = e.target;
+    if (t.dataset.action === 'ads') {
+      update((st) => { st.wallet.adsOptIn = t.checked; });
+    } else if (t.dataset.action === 'consent') {
+      if (gpc()) return;
+      update((st) => { setConsent(ensureExchange(st.wallet), t.dataset.cat, t.dataset.buyer, t.checked); });
+    } else if (t.dataset.action === 'sale-buyer') {
+      saleBuyer = t.value;
+      update(() => {});
     }
   });
   root.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
-    if (!el || el.dataset.action === 'ads') return;
+    if (!el || ['ads', 'consent', 'sale-buyer'].includes(el.dataset.action)) return;
     const { action, id } = el.dataset;
     const ds = DATASETS.find((d) => d.id === id);
-    if (action === 'ads-day') {
+    if (action === 'sale') {
+      let paid = 0;
       update((st) => {
-        st.wallet.usd += REWARD_RULES.adSharePerDay;
-        addLedger({ kind: 'ads', amount: REWARD_RULES.adSharePerDay, unit: 'USD', note: 'Ad revenue share (1 day)' });
+        const ex = ensureExchange(st.wallet);
+        const quote = quoteSale(st, ex, saleBuyer, { gpc: gpc() });
+        paid = applySale(ex, quote);
+        if (!paid) return;
+        st.wallet.sclv = Math.round((st.wallet.sclv + paid) * 100) / 100;
+        const what = quote.lines.map((l) => `${l.name} (${fmt(l.points)})`).join(', ');
+        addLedger({ kind: 'exchange', amount: paid, unit: '$SCLV', note: `Sold to ${quote.buyer.name.toLowerCase()}: ${what} · your ${SHARE * 100}%` });
+      });
+      toast(paid ? `+${fmt(paid, 2)} $SCLV (simulated)` : 'Nothing to sell');
+    } else if (action === 'withdraw-all') {
+      update((st) => { withdrawAll(ensureExchange(st.wallet)); });
+      toast('Consent withdrawn. Nothing more will be sold.');
+    } else if (action === 'ads-day') {
+      const sclv = REWARD_RULES.adSharePerDay * SCLV_PER_USD;
+      update((st) => {
+        st.wallet.sclv += sclv;
+        addLedger({ kind: 'ads', amount: sclv, unit: '$SCLV', note: 'Ad revenue share (1 day)' });
       });
     } else if (action === 'ds-approve') {
       update((st) => { st.wallet.datasets[id] = 'listed'; });

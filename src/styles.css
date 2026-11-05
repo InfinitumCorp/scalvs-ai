@@ -367,3 +367,13 @@ main { padding-bottom: 24px; }
 .fine.left { text-align: left; margin-top: 10px; }
 .chip { background: none; border: 1px solid var(--line); color: var(--muted); }
 .chip.sel { background: none; border-color: var(--ink); color: var(--ink); }
+
+/* Data exchange */
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+.table.consent th.center, .table.consent td.center { text-align: center; }
+.table.consent td p { margin: 2px 0 0; max-width: 340px; }
+.table.consent input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ink); }
+.row.wrap { flex-wrap: wrap; }
+details.small { margin-top: 12px; }
+details.small summary { cursor: pointer; color: var(--ink); }
+details.small ul, details.small p { margin: 8px 0 0; }
