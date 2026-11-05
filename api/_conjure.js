@@ -1,11 +1,11 @@
-// MiroFish predictive-simulation client (server side, product-agnostic).
+// CONJURE™ predictive-simulation client (server side, product-agnostic).
 //
-// MiroFish (https://github.com/666ghj/MiroFish, AGPL-3.0) is an open-source
-// swarm-intelligence engine: it turns seed material into a knowledge graph,
-// spawns persona agents, simulates how they react on Twitter- and Reddit-like
-// platforms, then has a ReportAgent write a forecast. Infinitum runs it
-// UNMODIFIED as a separate service and talks to it only over its HTTP API; no
-// MiroFish code is copied into Infinitum products.
+// CONJURE™ is Infinitum's in-house prediction model. Its engine is the
+// open-source MiroFish (https://github.com/666ghj/MiroFish, AGPL-3.0): it turns
+// seed material into a knowledge graph, spawns persona agents, simulates how
+// they react on Twitter- and Reddit-like platforms, then has a ReportAgent write
+// a forecast. Infinitum runs the engine UNMODIFIED as a separate service and
+// talks to it only over its HTTP API; no MiroFish code is copied here.
 //
 // The job is a plain object the caller stores and sends back. Each call to
 // advanceJob() performs at most ONE upstream request, so serverless calls stay
@@ -74,8 +74,8 @@ export function createJob(input = {}) {
   };
 }
 
-// Minimal MiroFish HTTP client. `fetchImpl` is injectable for tests.
-export function mirofishClient({ baseUrl, token, fetchImpl = fetch, timeoutMs = 30000 }) {
+// Minimal CONJURE engine (MiroFish) HTTP client. `fetchImpl` is injectable for tests.
+export function conjureClient({ baseUrl, token, fetchImpl = fetch, timeoutMs = 30000 }) {
   const root = String(baseUrl || '').replace(/\/+$/, '');
   async function call(method, path, { json, form, timeout = timeoutMs } = {}) {
     const headers = {};

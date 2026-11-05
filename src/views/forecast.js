@@ -6,7 +6,7 @@ import {
 } from '../forecaster.js';
 import { esc, md, ago, fmt, toast } from '../ui.js';
 
-const form = { product: 'SCALVS.ai', question: '', seed: '', rounds: '20', platform: 'parallel', vault: true };
+const form = { product: 'SCALVS.ai', question: FORECAST_PRESETS[0].question, seed: '', rounds: '20', platform: 'parallel', vault: true };
 const chatDrafts = {};
 const toggled = new Set();
 let busy = false;
@@ -14,7 +14,7 @@ let busy = false;
 const STATUS = { running: 'Running', completed: 'Completed', failed: 'Failed', stopped: 'Stopped' };
 
 function vaultText() {
-  return getState().vault.filter((m) => m.products.includes('SCALVS.ai')).map((m) => `- ${m.text}`).join('\n');
+  return getState().vault.filter((m) => m.products.includes('SCALVS.ai') || m.products.includes(form.product)).map((m) => `- ${m.text}`).join('\n');
 }
 
 function stages(job) {
@@ -73,16 +73,16 @@ export function render() {
   <header class="page-head">
     <p class="eyebrow">Predict</p>
     <h1>Forecast what happens next</h1>
-    <p class="lede">A swarm of AI personas reacts to your material, then reports what is likely to happen.</p>
-    <p class="fine left" role="status">${live === true ? 'Live: powered by the MiroFish swarm-intelligence engine. Forecasts are simulations of likely reactions, not guarantees.' : live === false ? 'Demo mode: no simulation runs and reports are placeholders. Set MIROFISH_URL to connect a MiroFish engine.' : 'Checking forecasting engine…'}</p>
+    <p class="lede">CONJURE<sup class="tm">™</sup> sends a swarm of AI personas through your material, then reports what is likely to happen.</p>
+    <p class="fine left" role="status">${live === true ? 'Live: powered by CONJURE<sup class="tm">™</sup>, the Infinitum prediction model. Forecasts are simulations of likely reactions, not guarantees.' : live === false ? 'Demo mode: no simulation runs and reports are placeholders. Set CONJURE_URL to connect CONJURE<sup class="tm">™</sup>.' : 'Checking forecasting engine…'}</p>
   </header>
 
   <section class="panel">
     <div class="panel-head"><h2>New forecast</h2><span class="tag">${cost} credits</span></div>
     <form id="fc-form" class="form">
-      <div>
-                <div class="chips">${FORECAST_PRESETS.map((p) => `<button type="button" class="chip ${form.product === p.product ? 'sel' : ''}" data-action="preset" data-product="${esc(p.product)}" aria-pressed="${form.product === p.product}">${esc(p.product)} · ${esc(p.label)}</button>`).join('')}</div>
-      </div>
+      <label>Product
+        <select name="product">${FORECAST_PRESETS.map((p) => `<option ${form.product === p.product ? 'selected' : ''}>${esc(p.product)}</option>`).join('')}</select>
+      </label>
       <label>What do you want to predict?
         <textarea name="question" rows="2" maxlength="2000" required>${esc(form.question)}</textarea>
       </label>
@@ -110,7 +110,7 @@ export function render() {
 
   <div class="row between section-row"><h2 class="section-title">Forecasts</h2>
     ${s.forecasts.some((f) => f.job.status !== 'running') ? '<button class="btn ghost sm" data-action="clear">Clear finished</button>' : ''}</div>
-  <div class="runs">${s.forecasts.map(card).join('') || '<p class="muted small">No forecasts yet. Pick a use case above, or use “Forecast this” on any agent result.</p>'}</div>`;
+  <div class="runs">${s.forecasts.map(card).join('') || '<p class="muted small">No forecasts yet. Choose a product above, or use “Forecast this” on any agent result.</p>'}</div>`;
 }
 
 export function bind(root, rerender) {
@@ -125,6 +125,15 @@ export function bind(root, rerender) {
     }
   });
   root.addEventListener('change', (e) => {
+    if (e.target.name === 'product') {
+      const p = FORECAST_PRESETS.find((x) => x.product === e.target.value);
+      if (p) {
+        form.product = p.product;
+        // Swap the starter question only if the user has not written their own.
+        if (!form.question.trim() || FORECAST_PRESETS.some((x) => x.question === form.question)) form.question = p.question;
+        rerender();
+      }
+    }
     if (e.target.name === 'vault') form.vault = e.target.checked;
     if (e.target.name === 'rounds' || e.target.name === 'platform') form[e.target.name] = e.target.value;
   });
@@ -133,12 +142,7 @@ export function bind(root, rerender) {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const { action, id } = el.dataset;
-    if (action === 'preset') {
-      const p = FORECAST_PRESETS.find((x) => x.product === el.dataset.product);
-      form.product = p.product;
-      if (!form.question.trim() || FORECAST_PRESETS.some((x) => x.question === form.question)) form.question = p.question;
-      rerender();
-    } else if (action === 'toggle') {
+    if (action === 'toggle') {
       toggled.has(id) ? toggled.delete(id) : toggled.add(id);
       rerender();
     } else if (action === 'stop') {

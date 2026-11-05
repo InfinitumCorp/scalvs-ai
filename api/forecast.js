@@ -1,4 +1,4 @@
-// Predictive forecasting API — Vercel serverless function backed by MiroFish.
+// Predictive forecasting API — Vercel serverless function backed by CONJURE™.
 //
 //   GET  /api/forecast                         -> { ok, live }
 //   POST /api/forecast { action: "create", question, seed, rounds?, platform?, product?, title? } -> { job }
@@ -6,11 +6,11 @@
 //   POST /api/forecast { action: "stop", job }                   -> { job }
 //   POST /api/forecast { action: "chat", job, message, history? } -> { reply }
 //
-// Set MIROFISH_URL to a self-hosted, unmodified MiroFish backend (and
-// optionally MIROFISH_TOKEN if it sits behind an auth gateway). Without it the
+// Set CONJURE_URL to the self-hosted CONJURE engine (unmodified MiroFish) and
+// optionally CONJURE_TOKEN if it sits behind an auth gateway. Without it the
 // endpoint answers 503 { mode: "demo" } and clients run a labeled simulation.
 
-import { advanceJob, createJob, mirofishClient, LIMITS } from './_mirofish.js';
+import { advanceJob, createJob, conjureClient, LIMITS } from './_conjure.js';
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const STEPS = new Set(['ontology', 'graph_build', 'graph_wait', 'sim_create', 'prepare', 'prepare_wait',
@@ -23,7 +23,11 @@ function json(body, status = 200) {
   });
 }
 
-const config = () => ({ baseUrl: process.env.MIROFISH_URL, token: process.env.MIROFISH_TOKEN });
+// MIROFISH_* names are still accepted for older deployments.
+const config = () => ({
+  baseUrl: process.env.CONJURE_URL || process.env.MIROFISH_URL,
+  token: process.env.CONJURE_TOKEN || process.env.MIROFISH_TOKEN,
+});
 
 // The job round-trips through the browser, so treat it as untrusted input.
 export function normalizeJob(raw) {
@@ -52,11 +56,11 @@ export function normalizeJob(raw) {
 
 export async function POST(request) {
   const { baseUrl, token } = config();
-  if (!baseUrl) return json({ mode: 'demo', error: 'MIROFISH_URL is not configured' }, 503);
+  if (!baseUrl) return json({ mode: 'demo', error: 'CONJURE_URL is not configured' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
-  const client = mirofishClient({ baseUrl, token });
+  const client = conjureClient({ baseUrl, token });
 
   switch (body?.action) {
     case 'create': {

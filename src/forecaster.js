@@ -1,6 +1,6 @@
-// Predictive forecasts in the browser: drives a MiroFish job through
+// Predictive forecasts in the browser: drives a CONJURE™ job through
 // /api/forecast one step at a time, persists it, and resumes after reloads.
-// Without MIROFISH_URL it runs a clearly labeled demo that simulates nothing.
+// Without CONJURE_URL it runs a clearly labeled demo that simulates nothing.
 
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES } from './data.js';
@@ -12,7 +12,7 @@ let pollMs = POLL_MS;
 export function setPollInterval(ms) { pollMs = ms; } // tests
 const MAX_API_FAILURES = 5;
 
-// Mirrors api/_mirofish.js (files under api/ are functions, not static assets).
+// Mirrors api/_conjure.js (files under api/ are functions, not static assets).
 export const STAGES = [
   { id: 'ontology', label: 'Read seed material', steps: ['ontology'] },
   { id: 'graph', label: 'Build knowledge graph', steps: ['graph_build', 'graph_wait'] },
@@ -22,7 +22,7 @@ export const STAGES = [
 ];
 export const stageIndex = (step) => Math.max(0, STAGES.findIndex((s) => s.steps.includes(step)));
 
-let liveStatus = null; // null unknown, true MiroFish configured, false demo
+let liveStatus = null; // null unknown, true CONJURE configured, false demo
 const drivers = new Map(); // forecastId -> { stopped }
 let draft = null;
 
@@ -149,7 +149,7 @@ function demoJob({ question, seed, rounds, platform, product, title }) {
 export function demoReport(job) {
   const q = job.question.length > 140 ? `${job.question.slice(0, 137)}…` : job.question;
   return [
-    '> **Demo mode: simulated output.** No agents were simulated and this is not a prediction. Set `MIROFISH_URL` to a MiroFish engine for real swarm forecasts.',
+    '> **Demo mode: simulated output.** No agents were simulated and this is not a prediction. Set `CONJURE_URL` to connect CONJURE™ for real forecasts.',
     '',
     `## Forecast: ${q}`,
     '',
@@ -224,7 +224,7 @@ export async function askReportAgent(id, message) {
     }
   } else {
     await sleep(500);
-    reply = '*Demo mode: simulated reply.* With a live MiroFish engine, the ReportAgent searches the simulated world (agents, posts and the knowledge graph) to answer this.';
+    reply = '*Demo mode: simulated reply.* With CONJURE™ live, the ReportAgent searches the simulated world (agents, posts and the knowledge graph) to answer this.';
   }
   mutate(id, (x) => {
     x.asking = false;

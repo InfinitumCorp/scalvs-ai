@@ -73,7 +73,7 @@ export const DATASETS = [
 
 export const REWARD_RULES = {
   creditsPerRun: 12,          // AI credits consumed per agent step (simulated)
-  creditsPerForecast: 60,     // AI credits per MiroFish swarm forecast (simulated)
+  creditsPerForecast: 60,     // AI credits per CONJURE™ forecast (simulated)
   activityPerVerified: 5,     // activity credits per verified run
   sclvPerVerified: 2,         // $SCLV per verified contribution
   sclvWeeklyCap: 50,          // capped rewards: value is real, not farmed
@@ -81,11 +81,28 @@ export const REWARD_RULES = {
   adSharePerDay: 0.4,         // simulated ad revenue share (USD) when opted in
 };
 
-// Predictive simulation (MiroFish swarm engine) use cases, one per Infinitum
-// product that can act on a forecast. Picking one pre-fills the question.
+// CONJURE™ (the Infinitum prediction model) use cases: one per Infinitum product.
+// Choosing a product tags the forecast and pre-fills a starting question.
 export const FORECAST_PRESETS = [
-  { product: 'SCALVS.ai', label: 'Launch reaction', question: 'How will our target audience react to this launch over the first two weeks, and which objections will spread fastest?' },
-  { product: '+SPCTR', label: 'Account response', question: 'How are our key accounts likely to respond to this pricing or contract change, and which relationships are most at risk?' },
-  { product: 'METATRON¹⁰⁰', label: 'Public scenario', question: 'How will public opinion evolve after this announcement, and what are the most likely best, base and worst cases?' },
-  { product: '/CNDCTR/', label: 'Pre-flight check', question: 'Before we execute this plan, how will the affected stakeholders react, and what should we change first?' },
+  { product: 'SCALVS.ai', question: 'How will our target audience react to this launch over the first two weeks, and which objections will spread fastest?' },
+  { product: '+SPCTR', question: 'How are our key accounts likely to respond to this pricing or contract change, and which relationships are most at risk?' },
+  { product: 'METATRON¹⁰⁰', question: 'How will public opinion evolve after this announcement, and what are the most likely best, base and worst cases?' },
+  { product: '/CNDCTR/', question: 'Before we execute this plan, how will the affected stakeholders react, and what should we change first?' },
+  { product: 'ODIN°', question: 'How will partner organizations and oversight bodies respond to this policy or procurement decision, and where will support or resistance form?' },
+  { product: '>_ARGUS', question: 'How will local communities and regulators react to this sensor deployment, and which privacy concerns need answering first?' },
+  { product: 'ÆTHER', question: 'How will security teams and end users react to this change in our secure network, and what will slow adoption?' },
+  { product: 'Cumulus://Cloud', question: 'How will developers and businesses react to this pricing or data-exchange change, and who is most likely to migrate away?' },
+  { product: 'DAEMON', question: 'How will nearby communities, regulators and the press react to this planned flight-test program, and which concerns will dominate?' },
+  { product: 'ei·det·ic', question: 'How will the public and privacy advocates react to this consent and purpose-control policy, and what would build trust fastest?' },
+  { product: 'E(O)N', question: 'How will field teams react to wearing this device every day, and which comfort, privacy or usability objections come first?' },
+  { product: 'FABRIC', question: 'How will users react to this change in messaging features or the opt-in data economy, and which groups are most likely to leave?' },
+  { product: 'FIRM Wallet', question: 'How will token holders and the crypto community react to this wallet or exchange update, and what misunderstandings will spread?' },
+  { product: 'Firmament Network', question: 'How will developers and partner products react to this protocol or governance change, and where will pushback come from?' },
+  { product: 'Flower', question: 'How will site operators react to installing this base station, and what operational concerns will they raise?' },
+  { product: '[HRVST]', question: 'How will capturers and the public react to this data-licensing offer, and which privacy concerns will decide uptake?' },
+  { product: 'ORBIS', question: 'How will inspection crews and safety managers react to using this drone indoors, and which objections block adoption?' },
+  { product: 'POLLEN', question: 'How will the public and regulators react to a swarm demonstration, and which messages reduce concern?' },
+  { product: 'SLUG', question: 'How will crews and site managers react to working alongside this autonomous ground vehicle, and what will they push back on?' },
+  { product: '#THRONE', question: 'How will buyers react to this computer launch and price point, and which competing products will they compare it with?' },
+  { product: 'VEIL</>', question: 'How will privacy-focused users react to this browser update or $VEIL rewards change, and what will they distrust?' },
 ];

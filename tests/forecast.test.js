@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {} };
-const { advanceJob, createJob, mirofishClient } = await import('../api/_mirofish.js');
+const { advanceJob, createJob, conjureClient } = await import('../api/_conjure.js');
 const api = await import('../api/forecast.js');
 const store = await import('../src/store.js');
 const forecaster = await import('../src/forecaster.js');
@@ -71,7 +71,7 @@ test('createJob validates input and clamps rounds to protect engine cost', () =>
 
 test('a job walks every MiroFish stage, one upstream call per step, to a report', async () => {
   const fake = fakeMiroFish();
-  const client = mirofishClient({ baseUrl: 'http://mf.test/', fetchImpl: fake.impl });
+  const client = conjureClient({ baseUrl: 'http://mf.test/', fetchImpl: fake.impl });
   let job = newJob();
   let last = 0;
   while (job.status === 'running') {
@@ -95,7 +95,7 @@ test('a job walks every MiroFish stage, one upstream call per step, to a report'
 
 test('bearer token is forwarded when configured', async () => {
   const fake = fakeMiroFish();
-  await advanceJob(newJob(), mirofishClient({ baseUrl: 'http://mf.test', token: 'gw-token', fetchImpl: fake.impl }));
+  await advanceJob(newJob(), conjureClient({ baseUrl: 'http://mf.test', token: 'gw-token', fetchImpl: fake.impl }));
   assert.equal(fake.calls[0].init.headers.authorization, 'Bearer gw-token');
 });
 
@@ -106,14 +106,14 @@ test('already-prepared simulations and existing reports skip their wait steps', 
       '/api/report/generate': () => Response.json({ success: true, data: { report_id: 'report_1', status: 'completed', already_generated: true } }),
     },
   });
-  const job = await runToEnd(newJob(), mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
+  const job = await runToEnd(newJob(), conjureClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
   assert.equal(job.status, 'completed');
   assert.ok(!fake.calls.some((c) => c.path === '/api/simulation/prepare/status' || c.path === '/api/report/generate/status'));
 });
 
 test('engine-side failures fail the job with a stage-labelled message', async () => {
   const fake = fakeMiroFish({ fail: { '/api/simulation/sim_1/run-status': () => Response.json({ success: true, data: { runner_status: 'failed' } }) } });
-  const job = await runToEnd(newJob(), mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
+  const job = await runToEnd(newJob(), conjureClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
   assert.equal(job.status, 'failed');
   assert.match(job.error, /Simulate reactions/);
   assert.equal(job.report, null);
@@ -121,7 +121,7 @@ test('engine-side failures fail the job with a stage-labelled message', async ()
 
 test('upstream error details are not leaked into the job', async () => {
   const fake = fakeMiroFish({ fail: { '/api/graph/ontology/generate': () => Response.json({ success: false, error: 'LLM key sk-secret invalid', traceback: 'File /srv/x.py' }, { status: 500 }) } });
-  const job = await advanceJob(newJob(), mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
+  const job = await advanceJob(newJob(), conjureClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
   assert.equal(job.status, 'failed');
   assert.ok(!JSON.stringify(job).includes('secret') && !JSON.stringify(job).includes('/srv'));
 });
@@ -129,7 +129,7 @@ test('upstream error details are not leaked into the job', async () => {
 test('transient errors while polling retry, but kick-off steps never double-submit', async () => {
   let flaky = 2;
   const fake = fakeMiroFish({ fail: { '/api/graph/task/task_g': () => (flaky-- > 0 ? new Response('bad gateway', { status: 502 }) : Response.json({ success: true, data: { status: 'completed', result: { graph_id: 'mirofish_g1' } } })) } });
-  const client = mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl });
+  const client = conjureClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl });
   let job = await advanceJob(await advanceJob(newJob(), client), client); // ontology, build
   job = await advanceJob(job, client);
   assert.equal(job.status, 'running');
@@ -139,41 +139,41 @@ test('transient errors while polling retry, but kick-off steps never double-subm
   assert.equal(job.step, 'sim_create');
   assert.equal(job.failures, 0);
 
-  const down = mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
+  const down = conjureClient({ baseUrl: 'http://mf.test', fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
   const kicked = await advanceJob(newJob(), down);
   assert.equal(kicked.status, 'failed', 'ontology upload is not retried blindly');
 });
 
 test('polling gives up after repeated transient failures', async () => {
   const fake = fakeMiroFish({ fail: { '/api/graph/task/task_g': () => new Response('down', { status: 503 }) } });
-  const job = await runToEnd(newJob(), mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
+  const job = await runToEnd(newJob(), conjureClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
   assert.equal(job.status, 'failed');
   assert.equal(fake.calls.filter((c) => c.path === '/api/graph/task/task_g').length, 5);
 });
 
 test('ids returned by the engine are validated before use in URLs', async () => {
   const fake = fakeMiroFish({ fail: { '/api/graph/ontology/generate': () => Response.json({ success: true, data: { project_id: '../../admin' } }) } });
-  const job = await advanceJob(newJob(), mirofishClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
+  const job = await advanceJob(newJob(), conjureClient({ baseUrl: 'http://mf.test', fetchImpl: fake.impl }));
   assert.equal(job.status, 'failed');
 });
 
 // ---------- HTTP handler ----------
 const originalFetch = globalThis.fetch;
-const originalUrl = process.env.MIROFISH_URL;
+const originalUrl = process.env.CONJURE_URL;
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  if (originalUrl === undefined) delete process.env.MIROFISH_URL; else process.env.MIROFISH_URL = originalUrl;
+  if (originalUrl === undefined) delete process.env.CONJURE_URL; else process.env.CONJURE_URL = originalUrl;
 });
 const req = (body) => new Request('http://localhost/api/forecast', { method: 'POST', body: JSON.stringify(body) });
 
-test('without MIROFISH_URL the API reports demo mode', async () => {
-  delete process.env.MIROFISH_URL;
+test('without CONJURE_URL the API reports demo mode', async () => {
+  delete process.env.CONJURE_URL;
   assert.equal((await api.POST(req({ action: 'create', question: 'Q', seed: SEED }))).status, 503);
   assert.equal((await (await api.GET()).json()).live, false);
 });
 
 test('handler rejects tampered jobs before touching the engine', async () => {
-  process.env.MIROFISH_URL = 'http://mf.test';
+  process.env.CONJURE_URL = 'http://mf.test';
   let called = false;
   globalThis.fetch = async () => { called = true; return Response.json({}); };
   const job = newJob();
@@ -185,7 +185,7 @@ test('handler rejects tampered jobs before touching the engine', async () => {
 });
 
 test('handler advances, stops and chats through the engine', async () => {
-  process.env.MIROFISH_URL = 'http://mf.test';
+  process.env.CONJURE_URL = 'http://mf.test';
   const fake = fakeMiroFish();
   globalThis.fetch = fake.impl;
   let { job } = await (await api.POST(req({ action: 'create', question: 'How will buyers react?', seed: SEED }))).json();
@@ -232,7 +232,7 @@ test('forecasts are refused when credits run out', async () => {
 });
 
 test('live forecasts run through the API and stop on request', async () => {
-  process.env.MIROFISH_URL = 'http://mf.test';
+  process.env.CONJURE_URL = 'http://mf.test';
   const fake = fakeMiroFish({ runPolls: 1000 });
   // Route the browser's relative API calls to the real handler, and the handler's calls to the fake engine.
   globalThis.fetch = async (url, init) => {

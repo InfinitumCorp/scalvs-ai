@@ -9,7 +9,7 @@ This is the first working prototype of the four-step flow from the [product page
 | 01 Create | **Agent Studio** | Six templates (Researcher, Writer, Coder, Sales rep, Operator, Support); name, role, instructions, tools, Context Vault, approval and schedule per agent; plan-based agent limits; multi-agent **teams** run in sequence (/CNDCTR/-style), each agent building on the previous output. |
 | 02 Connect | **Connect** | Toggle connections to your apps and Infinitum products (simulated); **Nexus Context Vault** entries with per-product permissions that agents read when memory is on. |
 | 03 Run | **Command Center** | Chat-style composer to give an agent or team a task; agent output **streams in live**; **Stop** a running task; **human approval** gates; copy any agent's output; AI-credit meter per plan; schedules list. |
-| Predict | **Forecasts** | Swarm forecasts powered by the open-source **MiroFish** engine: paste seed material, ask a question, and persona agents simulate reactions on Twitter- and Reddit-style platforms before a ReportAgent writes the forecast. Presets for SCALVS.ai, +SPCTR, METATRON¹⁰⁰ and /CNDCTR/; **Forecast this** on any agent result; live stage progress; Stop; resumes after reload; chat with the ReportAgent. |
+| Predict | **Forecasts** | Swarm forecasts from **CONJURE™**, the Infinitum prediction model: paste seed material, ask a question, and persona agents simulate reactions on Twitter- and Reddit-style platforms before a ReportAgent writes the forecast. A starter question for every Infinitum product (pick it from the Product menu); **Forecast this** on any agent result; live stage progress; Stop; resumes after reload; chat with the ReportAgent. |
 | 04 Earn | **Earnings & Data Wallet** | Activity credits and capped **$SCLV** rewards on verified runs, ad revenue share opt-in (Free plan), data licensing with an 85% share, ledger, plan switcher. |
 
 > **Simulated economy.** $SCLV, balances, sales and the ledger are mock values stored in the browser. No tokens, wallets, blockchain transactions or payments are involved. Completing a demo or live AI draft does not verify a contribution and does not award activity credits or tokens. Contribution verification and settlement remain unimplemented.
@@ -31,17 +31,17 @@ Prototype credits reset by UTC calendar month. Queued steps in active teams rese
 
 Run `npm test` for agent lifecycle, streaming relay, Stop and API regression tests, and `npm run check` for a syntax check. Provider responses are fixtures; the tests do not establish live provider connectivity. Browser verification covers demo completion, visible demo labeling and unchanged reward balances.
 
-## Predictive forecasts (MiroFish)
+## Predictive forecasts (CONJURE™)
 
-`api/forecast.js` drives a self-hosted [MiroFish](https://github.com/666ghj/MiroFish) backend through its HTTP API: read seed material → build knowledge graph → generate persona agents → simulate → ReportAgent report. The job object lives in the browser; each `POST /api/forecast {action:"advance"}` performs exactly one upstream step, so every serverless call is short and live forecasts resume after a reload. The server re-validates every job it receives (step names, id format, size and round limits). Forecasts cost 60 prototype credits.
+`api/forecast.js` drives CONJURE™, the Infinitum prediction model, through its HTTP API. The CONJURE engine is a self-hosted, unmodified [MiroFish](https://github.com/666ghj/MiroFish) backend. Pipeline: read seed material → build knowledge graph → generate persona agents → simulate → ReportAgent report. The job object lives in the browser; each `POST /api/forecast {action:"advance"}` performs exactly one upstream step, so every serverless call is short and live forecasts resume after a reload. The server re-validates every job it receives (step names, id format, size and round limits). Forecasts cost 60 prototype credits.
 
-- **Live:** set `MIROFISH_URL` (and `MIROFISH_TOKEN` if MiroFish sits behind an auth gateway). MiroFish itself needs its own `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_NAME` and `ZEP_API_KEY`; run it with its Docker image or `npm run dev` from its repo.
-- **Demo:** without `MIROFISH_URL` the app runs a labeled placeholder. No agents are simulated and the report says it is not a prediction.
-- **Licensing:** MiroFish is AGPL-3.0. It runs unmodified as a separate service and is called only over HTTP; none of its code is copied here. If you modify MiroFish and offer it to users over a network, the AGPL requires publishing those modifications.
-- **Security:** MiroFish ships with no authentication and open CORS. Never expose it publicly; keep it on a private network or behind a gateway that checks `MIROFISH_TOKEN`. `/api/forecast` is a prototype endpoint without user auth, so put the deployment behind access control before connecting a paid LLM key.
-- **Cost:** a run makes many LLM calls. Rounds are capped at 40, following MiroFish's own advice to start below 40.
+- **Live:** set `CONJURE_URL` (and `CONJURE_TOKEN` if the engine sits behind an auth gateway; the old `MIROFISH_*` names still work). The engine itself needs its own `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_NAME` and `ZEP_API_KEY`; run it with its Docker image or `npm run dev` from its repo.
+- **Demo:** without `CONJURE_URL` the app runs a labeled placeholder. No agents are simulated and the report says it is not a prediction.
+- **Licensing:** CONJURE™ is the Infinitum product name; its engine, MiroFish, is open source under AGPL-3.0 and keeps its own copyright. It runs unmodified as a separate service and is called only over HTTP; none of its code is copied here. If you modify MiroFish and offer it to users over a network, the AGPL requires publishing those modifications.
+- **Security:** the engine ships with no authentication and open CORS. Never expose it publicly; keep it on a private network or behind a gateway that checks `CONJURE_TOKEN`. `/api/forecast` is a prototype endpoint without user auth, so put the deployment behind access control before connecting a paid LLM key.
+- **Cost:** a run makes many LLM calls. Rounds are capped at 40, following the MiroFish project's own advice to start below 40.
 
-Other Infinitum products reuse `api/_mirofish.js` unchanged: `createJob()` + `advanceJob()` + `mirofishClient()`, passing their product name in `product`.
+Other Infinitum products reuse `api/_conjure.js` unchanged: `createJob()` + `advanceJob()` + `conjureClient()`, passing their product name in `product`.
 
 ## Run locally
 
@@ -51,7 +51,7 @@ No dependencies, no build step. Node 20+.
 cd scalvs
 npm run dev                                  # demo mode, http://localhost:3000
 ANTHROPIC_API_KEY=sk-ant-... npm run dev     # live mode
-MIROFISH_URL=http://localhost:5001 npm run dev  # live forecasts (MiroFish backend)
+CONJURE_URL=http://localhost:5001 npm run dev  # live forecasts (CONJURE engine)
 ```
 
 ## Deploy
@@ -69,8 +69,8 @@ src/data.js           templates, plans, connectors, reward rules
 src/views/*.js        command, studio, connect, earnings
 src/styles.css        clean white UI
 api/run.js            Claude-backed agent step (Vercel function)
-api/forecast.js       MiroFish forecast proxy (Vercel function)
-api/_mirofish.js      MiroFish client + one-step-per-call job state machine
+api/forecast.js       CONJURE™ forecast proxy (Vercel function)
+api/_conjure.js       CONJURE™ client + one-step-per-call job state machine
 src/forecaster.js     browser forecast driver, demo mode, resume, ReportAgent chat
 src/views/forecast.js Forecasts screen
 dev-server.mjs        zero-dependency local server
