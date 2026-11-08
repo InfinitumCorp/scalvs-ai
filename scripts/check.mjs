@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const files = ['dev-server.mjs',
-  ...readdirSync('api').filter(f => f.endsWith('.js')).map(f => join('api', f)),
+  'worker.js', ...readdirSync('api').filter(f => f.endsWith('.js')).map(f => join('api', f)),
   ...readdirSync('src').filter(f => f.endsWith('.js')).map(f => join('src', f)),
   ...readdirSync('src/views').filter(f => f.endsWith('.js')).map(f => join('src/views', f))];
 for (const f of files) execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' });

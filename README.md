@@ -16,9 +16,9 @@ This is the first working prototype of the four-step flow from the [product page
 
 ## Live vs demo mode
 
-Agent steps run through `api/run.js`, a Vercel serverless function that calls the Claude Messages API.
+Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.js`), which calls the Claude Messages API.
 
-- **Live:** set `ANTHROPIC_API_KEY` in the Vercel project (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
+- **Live:** set `ANTHROPIC_API_KEY` as a Worker secret (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
 - **Demo:** with no key the function answers `503` and the app falls back to simulated agent output, so everything still works end to end.
 
 The composer shows which mode is active.
@@ -74,9 +74,32 @@ ANTHROPIC_API_KEY=sk-ant-... npm run dev     # live mode
 CONJURE_URL=http://localhost:5001 npm run dev  # live forecasts (CONJURE engine)
 ```
 
-## Deploy
+## Deploy (Cloudflare Workers)
 
-Import the repo in Vercel and set **Root Directory** to `scalvs` (framework preset: **Other**, no build command). Static files are served as-is and `api/run.js` becomes `/api/run`. All paths are relative, so the static app also works from any subfolder (it falls back to demo mode where `/api/run` isn't deployed).
+`wrangler.jsonc` deploys a Worker named `scalvs-ai`. `npm run build` copies only the browser files (`index.html`, `src/`, `public/`) into `dist/`, which Workers Static Assets serves. `/api/run` and `/api/forecast` go to `worker.js`, which calls the same Web-standard handlers in `api/`. The API source, tests and config never become public URLs.
+
+```bash
+npm install
+npm run dev:worker       # build + wrangler dev
+npm run deploy:preview   # build + upload a preview version (does not go live)
+npm run deploy           # production deploy, which needs sign-off first
+```
+
+`npm run dev` (zero-dependency Node server) still works for local hacking.
+
+### Environment variables
+
+Set secrets with `npx wrangler secret put <NAME>`, or put them in a git-ignored `.dev.vars` for `wrangler dev`. Never commit them. With none set, the app runs in demo mode.
+
+| Name | Kind | What it is |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | secret | Turns on live agents. |
+| `SCALVS_MODEL` | var | Optional model override (default `claude-sonnet-5-5`). |
+| `ANTHROPIC_BASE_URL` | var | Optional gateway URL. |
+| `CONJURE_URL` | var | CONJURE™ engine base URL. Must be private or behind a token-checking proxy. |
+| `CONJURE_TOKEN` | secret | Token for that proxy. |
+
+There's no database: all state stays in the browser (`localStorage`), so this app has no Supabase schema.
 
 ## Structure
 
@@ -88,8 +111,9 @@ src/runner.js         run lifecycle: sequencing, approvals, credits, rewards
 src/data.js           templates, plans, connectors, reward rules
 src/views/*.js        command, studio, connect, earnings
 src/styles.css        clean white UI
-api/run.js            Claude-backed agent step (Vercel function)
-api/forecast.js       CONJURE™ forecast proxy (Vercel function)
+worker.js             Cloudflare Worker: /api/* routes, assets for the rest
+api/run.js            Claude-backed agent step
+api/forecast.js       CONJURE™ forecast proxy
 api/_conjure.js       CONJURE™ client + one-step-per-call job state machine
 src/forecaster.js     browser forecast driver, demo mode, resume, ReportAgent chat
 src/exchange.js       data exchange: consent, points, sales and $SCLV payouts

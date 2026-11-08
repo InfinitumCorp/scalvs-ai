@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // SCALVS.ai on Cloudflare Workers: static app from dist/ (npm run build),
+  // /api/run and /api/forecast from worker.js. Secrets (ANTHROPIC_API_KEY,
+  // CONJURE_TOKEN, …) are set with `wrangler secret put`, never here.
+  "name": "scalvs-ai",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  }
+}
