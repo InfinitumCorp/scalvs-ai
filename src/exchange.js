@@ -47,7 +47,7 @@ export const EXCLUDED_PRODUCTS = [
   'ODIN°', '>_ARGUS', 'DAEMON', 'POLLEN', 'ORBIS', 'SLUG', 'Flower', 'ÆTHER', 'ei·det·ic', 'Firmament Network',
 ];
 
-export const SHARE = 0.7;        // the person's share of every sale
+export const SHARE = 0.85;       // the person's share of every sale
 export const SCLV_PER_USD = 10;  // simulated conversion for payouts
 export const MIN_COHORT = 1000;  // segments are only sold pooled with at least this many people
 

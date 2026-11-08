@@ -10,7 +10,7 @@ This is the first working prototype of the four-step flow from the [product page
 | 02 Connect | **Connect** | Toggle connections to your apps and Infinitum products (simulated); **Nexus Context Vault** entries with per-product permissions that agents read when memory is on. |
 | 03 Run | **Command Center** | Chat-style composer to give an agent or team a task; agent output **streams in live**; **Stop** a running task; **human approval** gates; copy any agent's output; AI-credit meter per plan; schedules list. |
 | Predict | **Forecasts** | Swarm forecasts from **CONJURE™**, the Infinitum prediction model: paste seed material, ask a question, and persona agents simulate reactions on Twitter- and Reddit-style platforms before a ReportAgent writes the forecast. A starter question for every Infinitum product (pick it from the Product menu); **Forecast this** on any agent result; live stage progress; Stop; resumes after reload; chat with the ReportAgent. |
-| 04 Earn | **Earnings & Data Wallet** | Activity credits and capped **$SCLV** rewards on verified runs, **Data exchange** (sell usage data to ad platforms, data brokers and researchers with per-category, per-buyer consent; 70% paid back in $SCLV), ad revenue share in $SCLV (Free plan), data licensing with an 85% share, ledger, plan switcher. |
+| 04 Earn | **Earnings & Data Wallet** | Activity credits and capped **$SCLV** rewards on verified runs, **Data exchange** (sell usage data to ad platforms, data brokers and researchers with per-category, per-buyer consent; 85% paid back in $SCLV), ad revenue share in $SCLV (Free plan), data licensing with an 85% share, ledger, plan switcher. |
 
 > **Simulated economy.** $SCLV, balances, sales and the ledger are mock values stored in the browser. No tokens, wallets, blockchain transactions or payments are involved. Completing a demo or live AI draft does not verify a contribution and does not award activity credits or tokens. Contribution verification and settlement remain unimplemented.
 
@@ -50,7 +50,7 @@ People create data by using Infinitum products. `src/exchange.js` (product-agnos
 - **Consent first.** Every category × buyer-type pair (ad platforms, data brokers, research) starts off. Nothing is sold without consent for that exact pair, and "Withdraw all consent" stops future sales.
 - **What can be sold:** product usage counts, broad interest labels, purchase intent and coarse region (country/state). Never sold: message, document and prompt content, precise location, biometrics, health/financial/ID data, anything from ODIN° or a military edition, and data from minors.
 - **Which products contribute:** consumer products only (`EXCHANGE_PRODUCTS`). Defense, identity and network products are excluded. Only SCALVS.ai is connected in this prototype.
-- **Payout:** the person keeps 70% of each sale, paid in $SCLV. Ad revenue share is also paid in $SCLV. Points are credited once and never sold twice.
+- **Payout:** the person keeps 85% of each sale, paid in $SCLV. Ad revenue share is also paid in $SCLV. Points are credited once and never sold twice.
 - **Global Privacy Control** is treated as an opt-out of all sales.
 - **Simulated:** no data leaves the browser and no tokens or money move.
 
