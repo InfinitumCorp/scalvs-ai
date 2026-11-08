@@ -8,6 +8,11 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Production domains (zone scalvs.app is on this Cloudflare account).
+  "routes": [
+    { "pattern": "scalvs.app", "custom_domain": true },
+    { "pattern": "www.scalvs.app", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
