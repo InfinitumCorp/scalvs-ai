@@ -1,12 +1,15 @@
-// SCALVS.ai agent runtime — Vercel serverless function.
+// SCALVS.ai agent runtime (Cloudflare Worker route, see worker.js).
 // POST /api/run  { agent, task, context?, previous?, stream? }
 //   stream=false -> { mode, model, output, usage }
 //   stream=true  -> text/event-stream of {type:"text"|"done"|"error"} events
 //
-// Runs one agent step against the Claude Messages API using ANTHROPIC_API_KEY.
-// When no key is configured it answers 503 { mode: "demo" } and the client
-// falls back to its built-in simulated runner, so the prototype still works.
-// Provider failures and empty responses are errors, never simulated successes.
+// Runs one agent step against the Claude Messages API when ANTHROPIC_API_KEY is
+// set, otherwise against Workers AI through the Worker's AI binding. With
+// neither it answers 503 { mode: "demo" } and the client falls back to its
+// built-in simulated runner. Provider failures and empty responses are errors,
+// never simulated successes.
+
+import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
 
 const apiUrl = () => `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '')}/v1/messages`;
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
@@ -54,9 +57,9 @@ export function buildSystemPrompt(agent = {}, context = []) {
   ].filter(Boolean).join('\n\n');
 }
 
-export async function POST(request) {
+export async function POST(request, env) {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return json({ mode: 'demo', error: 'ANTHROPIC_API_KEY is not configured' }, 503);
+  if (!key && !hasWorkersAi(env)) return json({ mode: 'demo', error: 'No model is configured' }, 503);
 
   let body;
   try {
@@ -73,6 +76,8 @@ export async function POST(request) {
     : task;
 
   const stream = body.stream === true;
+
+  if (!key) return runWorkersAi(env, buildSystemPrompt(body.agent, body.context), userContent, stream);
 
   try {
     const upstream = await fetch(apiUrl(), {
@@ -183,6 +188,23 @@ export function relayStream(upstream) {
   });
 }
 
-export function GET() {
-  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) });
+async function runWorkersAi(env, system, user, stream) {
+  const model = workersAiModel();
+  try {
+    const result = await env.AI.run(model, {
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      max_tokens: 1500,
+      stream,
+    });
+    if (stream) return relayWorkersAiStream(result, model);
+    const output = resultText(result).trim();
+    if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
+    return json({ mode: 'live', model, output, usage: result?.usage || null });
+  } catch {
+    return json({ error: 'The model request could not complete. Please retry.' }, 502);
+  }
+}
+
+export function GET(_request, env) {
+  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) || hasWorkersAi(env) });
 }

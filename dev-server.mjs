@@ -1,5 +1,5 @@
 // Zero-dependency local dev server: serves static files and runs /api/run
-// the same way Vercel does (Web-standard Request -> Response handlers).
+// the same way the Worker does (Web-standard Request -> Response handlers).
 // Usage: ANTHROPIC_API_KEY=sk-... node dev-server.mjs   (key optional)
 
 import { createServer } from 'node:http';

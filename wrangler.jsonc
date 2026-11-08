@@ -13,6 +13,14 @@
     { "pattern": "scalvs.app", "custom_domain": true },
     { "pattern": "www.scalvs.app", "custom_domain": true }
   ],
+  // Workers AI runs SCALVS agents and CONJURE forecasts when no ANTHROPIC_API_KEY
+  // or CONJURE_URL is set. WORKERS_AI_MODEL overrides the model.
+  "ai": { "binding": "AI" },
+  "vars": { "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+  // Per-IP cap on API POSTs (worker.js).
+  "ratelimits": [
+    { "name": "API_LIMIT", "namespace_id": "1701", "simple": { "limit": 60, "period": 60 } }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

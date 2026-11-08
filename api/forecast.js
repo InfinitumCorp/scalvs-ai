@@ -6,11 +6,14 @@
 //   POST /api/forecast { action: "stop", job }                   -> { job }
 //   POST /api/forecast { action: "chat", job, message, history? } -> { reply }
 //
-// Set CONJURE_URL to the self-hosted CONJURE engine (unmodified MiroFish) and
-// optionally CONJURE_TOKEN if it sits behind an auth gateway. Without it the
-// endpoint answers 503 { mode: "demo" } and clients run a labeled simulation.
+// Engines, in order of preference:
+//  1. CONJURE_URL (+ CONJURE_TOKEN): an external CONJURE engine (unmodified MiroFish).
+//  2. The Worker's AI binding: CONJURE (nexus engine) runs inside this Worker on Workers AI.
+//  3. Neither: 503 { mode: "demo" } and clients run a labeled simulation.
 
 import { advanceJob, createJob, conjureClient, LIMITS } from './_conjure.js';
+import { advanceLocal, chatLocal } from './_conjure-local.js';
+import { hasWorkersAi, workersAiComplete, workersAiModel } from './_workers-ai.js';
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const STEPS = new Set(['ontology', 'graph_build', 'graph_wait', 'sim_create', 'prepare', 'prepare_wait',
@@ -54,12 +57,64 @@ export function normalizeJob(raw) {
   };
 }
 
-export async function POST(request) {
+// Local-engine jobs also carry the simulation and, once done, the report.
+function normalizeLocalJob(raw) {
+  const job = normalizeJob(raw);
+  if (!job) return null;
+  return {
+    ...job,
+    engine: 'conjure-local',
+    sim: raw.sim && typeof raw.sim === 'object' ? raw.sim : null,
+    report: typeof raw.report === 'string' ? raw.report.slice(0, 200000) : null,
+    error: typeof raw.error === 'string' ? raw.error.slice(0, 500) : null,
+  };
+}
+
+async function localPost(body, env) {
+  const model = workersAiModel();
+  const complete = workersAiComplete(env, model);
+  switch (body?.action) {
+    case 'create': {
+      const { job, error } = createJob(body);
+      return error ? json({ error }, 400) : json({ mode: 'live', job: { ...job, engine: 'conjure-local', sim: null } });
+    }
+    case 'advance': {
+      const job = normalizeLocalJob(body.job);
+      if (!job) return json({ error: 'Invalid forecast job' }, 400);
+      return json({ mode: 'live', job: await advanceLocal(job, complete, model) });
+    }
+    case 'stop': {
+      const job = normalizeLocalJob(body.job);
+      if (!job) return json({ error: 'Invalid forecast job' }, 400);
+      return json({ mode: 'live', job: { ...job, status: 'stopped', message: 'Stopped' } });
+    }
+    case 'chat': {
+      const job = normalizeLocalJob(body.job);
+      const message = String(body.message ?? '').slice(0, LIMITS.question).trim();
+      if (!job || job.status !== 'completed' || !job.report) return json({ error: 'Chat is available once the forecast is complete.' }, 400);
+      if (!message) return json({ error: 'Missing message' }, 400);
+      const history = (Array.isArray(body.history) ? body.history : []).slice(-10)
+        .filter((m) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string')
+        .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+      try {
+        const reply = await chatLocal(job, message, history, complete);
+        return reply ? json({ mode: 'live', reply: reply.slice(0, 20000) }) : json({ error: 'No answer. Please retry.' }, 502);
+      } catch {
+        return json({ error: 'The report analyst could not answer. Please retry.' }, 502);
+      }
+    }
+    default:
+      return json({ error: 'Unknown action' }, 400);
+  }
+}
+
+export async function POST(request, env) {
   const { baseUrl, token } = config();
-  if (!baseUrl) return json({ mode: 'demo', error: 'CONJURE_URL is not configured' }, 503);
+  if (!baseUrl && !hasWorkersAi(env)) return json({ mode: 'demo', error: 'No forecasting engine is configured' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
+  if (!baseUrl) return localPost(body, env);
   const client = conjureClient({ baseUrl, token });
 
   switch (body?.action) {
@@ -102,6 +157,6 @@ export async function POST(request) {
   }
 }
 
-export function GET() {
-  return json({ ok: true, live: Boolean(config().baseUrl) });
+export function GET(_request, env) {
+  return json({ ok: true, live: Boolean(config().baseUrl) || hasWorkersAi(env) });
 }

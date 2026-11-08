@@ -18,7 +18,8 @@ This is the first working prototype of the four-step flow from the [product page
 
 Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.js`), which calls the Claude Messages API.
 
-- **Live:** set `ANTHROPIC_API_KEY` as a Worker secret (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
+- **Live on Workers AI (default on scalvs.app):** with no key set, agents run on the Worker's Workers AI binding (`WORKERS_AI_MODEL`, default `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), billed to the Cloudflare account. No provider key is needed.
+- **Live on Claude:** set `ANTHROPIC_API_KEY` as a Worker secret (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
 - **Demo:** with no key the function answers `503` and the app falls back to simulated agent output, so everything still works end to end.
 
 The composer shows which mode is active.
@@ -36,7 +37,8 @@ Run `npm test` for agent lifecycle, streaming relay, Stop and API regression tes
 `api/forecast.js` drives CONJURE™, the Infinitum prediction model, through its HTTP API. The CONJURE engine is a self-hosted, unmodified [MiroFish](https://github.com/666ghj/MiroFish) backend. Pipeline: read seed material → build knowledge graph → generate persona agents → simulate → ReportAgent report. The job object lives in the browser; each `POST /api/forecast {action:"advance"}` performs exactly one upstream step, so every serverless call is short and live forecasts resume after a reload. The server re-validates every job it receives (step names, id format, size and round limits). Forecasts cost 60 prototype credits.
 
 - **Live:** set `CONJURE_URL` (and `CONJURE_TOKEN` if the engine sits behind an auth gateway; the old `MIROFISH_*` names still work). The engine itself needs its own `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_NAME` and `ZEP_API_KEY`; run it with its Docker image or `npm run dev` from its repo.
-- **Demo:** without `CONJURE_URL` the app runs a labeled placeholder. No agents are simulated and the report says it is not a prediction.
+- **Live on Workers AI (default on scalvs.app):** without `CONJURE_URL`, CONJURE™ runs inside the Worker: the nexus engine (`api/_conjure-engine.ts`, vendored from infinitum-nexus `packages/conjure`) builds a world of 12 persona agents, plays up to 6 rounds (one per request) and writes the report. Caps are enforced server-side; API POSTs are rate-limited to 60 per minute per IP.
+- **Demo:** with no engine URL and no AI binding (for example `npm run dev`), the app runs a labeled placeholder. No agents are simulated and the report says it is not a prediction.
 - **Licensing:** CONJURE™ is the Infinitum product name; its engine, MiroFish, is open source under AGPL-3.0 and keeps its own copyright. It runs unmodified as a separate service and is called only over HTTP; none of its code is copied here. If you modify MiroFish and offer it to users over a network, the AGPL requires publishing those modifications.
 - **Security:** the engine ships with no authentication and open CORS. Never expose it publicly; keep it on a private network or behind a gateway that checks `CONJURE_TOKEN`. `/api/forecast` is a prototype endpoint without user auth, so put the deployment behind access control before connecting a paid LLM key.
 - **Cost:** a run makes many LLM calls. Rounds are capped at 40, following the MiroFish project's own advice to start below 40.
