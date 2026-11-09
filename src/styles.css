@@ -377,3 +377,6 @@ main { padding-bottom: 24px; }
 details.small { margin-top: 12px; }
 details.small summary { cursor: pointer; color: var(--ink); }
 details.small ul, details.small p { margin: 8px 0 0; }
+
+/* FIRM Suite block on Earnings (styles live in src/firm/firm-suite.css) */
+firm-suite.firm { margin: 0 0 20px; }
