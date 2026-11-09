@@ -61,6 +61,8 @@ export function render() {
     <div class="stat"><span class="stat-n">${fmt(capLeft)}</span><span class="muted small">$SCLV left in weekly cap</span></div>
   </div>
 
+  <firm-suite class="firm" product="scalvs"></firm-suite>
+
   <section class="panel">
     <div class="panel-head"><h2>How rewards work</h2></div>
     <ul class="plain small">

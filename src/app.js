@@ -7,6 +7,7 @@ import * as connect from './views/connect.js';
 import * as earnings from './views/earnings.js';
 import * as forecast from './views/forecast.js';
 import { checkForecastLive, resumeForecasts } from './forecaster.js';
+import './firm/firm-suite.js'; // FIRM Suite embed (<firm-suite>), canonical copy from infinitum-nexus
 
 const ROUTES = { command, studio, connect, forecast, earnings };
 const main = document.getElementById('main');
