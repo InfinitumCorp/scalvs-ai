@@ -3,12 +3,16 @@
 //   stream=false -> { mode, model, output, usage }
 //   stream=true  -> text/event-stream of {type:"text"|"done"|"error"} events
 //
-// Runs one agent step against the Claude Messages API when ANTHROPIC_API_KEY is
-// set, otherwise against Workers AI through the Worker's AI binding. With
-// neither it answers 503 { mode: "demo" } and the client falls back to its
-// built-in simulated runner. Provider failures and empty responses are errors,
-// never simulated successes.
+// Provider order (each one is skipped unless it is configured):
+//   1. Claude Messages API when ANTHROPIC_API_KEY is set
+//   2. Workers AI through the Worker's AI binding
+//   3. Google AI Studio Gemini when GEMINI_API_KEY is set (free tier, not Vertex)
+// An HTTP 429 from one provider falls through to the next. With none configured
+// the handler answers 503 { mode: "demo" } and the client uses its simulated
+// runner. Other provider failures and empty responses are errors, never
+// simulated successes.
 
+import { geminiEndpoint, geminiModel, geminiRequestBody, geminiText, geminiUsage, hasGemini, relayGeminiStream } from './_gemini.js';
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
 
 const apiUrl = () => `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '')}/v1/messages`;
@@ -57,9 +61,26 @@ export function buildSystemPrompt(agent = {}, context = []) {
   ].filter(Boolean).join('\n\n');
 }
 
+const RATE_LIMITED = Symbol('rate-limited');
+
+function isRateLimit(err) {
+  const status = err?.status || err?.statusCode;
+  if (status === 429) return true;
+  const msg = `${err?.message || ''} ${err?.code || ''}`;
+  return /\b429\b|RESOURCE_EXHAUSTED|rate[- ]limit/i.test(msg);
+}
+
+function configuredProviders(env) {
+  const providers = [];
+  if (process.env.ANTHROPIC_API_KEY) providers.push('anthropic');
+  if (hasWorkersAi(env)) providers.push('workers-ai');
+  if (hasGemini()) providers.push('gemini');
+  return providers;
+}
+
 export async function POST(request, env) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key && !hasWorkersAi(env)) return json({ mode: 'demo', error: 'No model is configured' }, 503);
+  const providers = configuredProviders(env);
+  if (!providers.length) return json({ mode: 'demo', error: 'No model is configured' }, 503);
 
   let body;
   try {
@@ -74,42 +95,61 @@ export async function POST(request, env) {
   const userContent = body.previous
     ? `Task:\n${task}\n\nOutput from the previous agent in this team, to build on:\n${clip(body.previous, 8000)}`
     : task;
-
   const stream = body.stream === true;
+  const ctx = {
+    env,
+    system: buildSystemPrompt(body.agent, body.context),
+    user: userContent,
+    stream,
+    signal: combineSignals(request.signal, AbortSignal.timeout(stream ? STREAM_TIMEOUT_MS : TIMEOUT_MS)),
+  };
 
-  if (!key) return runWorkersAi(env, buildSystemPrompt(body.agent, body.context), userContent, stream);
+  let sawRateLimit = false;
+  for (const provider of providers) {
+    const result = await attemptProvider(provider, ctx);
+    if (result === RATE_LIMITED) { sawRateLimit = true; continue; }
+    return result;
+  }
+  if (sawRateLimit) return json({ error: 'The model is rate limited. Please retry shortly.' }, 429);
+  return json({ mode: 'demo', error: 'No model is configured' }, 503);
+}
 
+async function attemptProvider(provider, ctx) {
+  if (provider === 'anthropic') return attemptAnthropic(ctx);
+  if (provider === 'workers-ai') return attemptWorkersAi(ctx);
+  return attemptGemini(ctx);
+}
+
+async function attemptAnthropic({ system, user, stream, signal }) {
   try {
     const upstream = await fetch(apiUrl(), {
       method: 'POST',
-      signal: combineSignals(request.signal, AbortSignal.timeout(stream ? STREAM_TIMEOUT_MS : TIMEOUT_MS)),
+      signal,
       headers: {
         'content-type': 'application/json',
-        'x-api-key': key,
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
         model: process.env.SCALVS_MODEL || DEFAULT_MODEL,
         max_tokens: 1500,
         stream,
-        system: buildSystemPrompt(body.agent, body.context),
-        messages: [{ role: 'user', content: userContent }],
+        system,
+        messages: [{ role: 'user', content: user }],
       }),
     });
-
-    if (!upstream.ok) {
-      return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
+    if (upstream.status === 429) {
+      upstream.body?.cancel?.().catch(() => {});
+      return RATE_LIMITED;
     }
-
+    if (!upstream.ok) return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
     if (stream) return relayStream(upstream);
-
     const data = await upstream.json();
     const output = (Array.isArray(data.content) ? data.content : [])
       .filter((block) => block?.type === 'text' && typeof block.text === 'string')
       .map((block) => block.text)
       .join('\n')
       .trim();
-
     if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
     return json({ mode: 'live', model: data.model, output, usage: data.usage || null });
   } catch {
@@ -188,7 +228,7 @@ export function relayStream(upstream) {
   });
 }
 
-async function runWorkersAi(env, system, user, stream) {
+async function attemptWorkersAi({ env, system, user, stream }) {
   const model = workersAiModel();
   try {
     const result = await env.AI.run(model, {
@@ -200,11 +240,43 @@ async function runWorkersAi(env, system, user, stream) {
     const output = resultText(result).trim();
     if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
     return json({ mode: 'live', model, output, usage: result?.usage || null });
+  } catch (err) {
+    if (isRateLimit(err)) return RATE_LIMITED;
+    return json({ error: 'The model request could not complete. Please retry.' }, 502);
+  }
+}
+
+async function attemptGemini({ system, user, stream, signal }) {
+  const endpoint = geminiEndpoint(stream);
+  if (!endpoint) return json({ error: 'Gemini must use the Google AI Studio API, not Vertex AI.' }, 502);
+  try {
+    const upstream = await fetch(endpoint, {
+      method: 'POST',
+      signal,
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify(geminiRequestBody(system, user)),
+    });
+    if (upstream.status === 429) {
+      upstream.body?.cancel?.().catch(() => {});
+      return RATE_LIMITED;
+    }
+    if (!upstream.ok) {
+      upstream.body?.cancel?.().catch(() => {});
+      return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
+    }
+    if (stream) return relayGeminiStream(upstream, geminiModel());
+    const data = await upstream.json();
+    const output = geminiText(data).trim();
+    if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
+    return json({ mode: 'live', model: data.modelVersion || geminiModel(), output, usage: geminiUsage(data) });
   } catch {
     return json({ error: 'The model request could not complete. Please retry.' }, 502);
   }
 }
 
 export function GET(_request, env) {
-  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) || hasWorkersAi(env) });
+  return json({ ok: true, live: configuredProviders(env).length > 0 });
 }

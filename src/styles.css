@@ -107,6 +107,7 @@ input:not([type=checkbox]), textarea, select {
 input:focus, textarea:focus, select:focus { border-color: var(--ink); }
 textarea { resize: vertical; }
 .form { display: grid; gap: 16px; }
+.subform { margin-top: 12px; }
 .form label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
 fieldset { border: 0; padding: 0; margin: 0; }
 legend { font-size: 13px; font-weight: 500; margin-bottom: 8px; }

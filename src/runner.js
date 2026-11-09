@@ -47,7 +47,7 @@ function demoOutput(agent, task, previous) {
     `- ${plans[0]}: done using ${agent.tools.slice(0, 2).join(' and ') || 'built-in reasoning'}.\n` +
     `- ${plans[1]}: completed.\n` +
     `- ${plans[2]}: ready for review.\n\n` +
-    `*Demo mode: simulated response. Add ANTHROPIC_API_KEY to the deployment to have ${agent.name} produce real work.*`;
+    `*Demo mode: simulated response. Add ANTHROPIC_API_KEY or GEMINI_API_KEY to the deployment to have ${agent.name} produce real work.*`;
 }
 
 const abortError = () => new DOMException('Stopped', 'AbortError');

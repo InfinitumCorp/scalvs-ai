@@ -85,7 +85,7 @@ function composer(s, running, live) {
         : `<button class="send" type="submit" aria-label="Run task" ${s.agents.length ? '' : 'disabled'}>${ICON.send}</button>`}
     </div>
   </form>
-  <p class="fine" role="status">${live === true ? 'Live AI drafts. Connections and rewards are simulated in this prototype.' : live === false ? 'Demo mode. Answers are simulated.' : '&nbsp;'}</p>`;
+  <p class="fine" role="status">${live === true ? 'Live AI drafts. Rewards are simulated in this prototype.' : live === false ? 'Demo mode. Answers are simulated.' : '&nbsp;'}</p>`;
 }
 
 export function render() {

@@ -5,6 +5,7 @@
 // nodejs_compat fills from the Worker's vars and secrets.
 import * as run from './api/run.js';
 import * as forecast from './api/forecast.js';
+import * as google from './api/google.js';
 
 const ROUTES = { '/api/run': run, '/api/forecast': forecast };
 const SECURITY_HEADERS = {
@@ -15,9 +16,10 @@ const SECURITY_HEADERS = {
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
-    const api = ROUTES[pathname.replace(/\/$/, '')];
+    const path = pathname.replace(/\/$/, '') || '/';
+    const api = path.startsWith('/api/google') ? google : ROUTES[path];
     if (!api) return env.ASSETS.fetch(request);
-    const handler = api[request.method];
+    const handler = path.startsWith('/api/google') ? google.handle : api[request.method];
     if (!handler) return new Response('Method Not Allowed', { status: 405, headers: SECURITY_HEADERS });
     // Model calls cost money and the API is public: cap POSTs per client IP.
     if (request.method === 'POST' && env.API_LIMIT) {
@@ -30,7 +32,13 @@ export default {
       }
     }
     const response = await handler(request, env);
-    const headers = new Headers(response.headers);
+    const headers = new Headers();
+    for (const [k, v] of response.headers) {
+      if (k.toLowerCase() === 'set-cookie') continue;
+      headers.set(k, v);
+    }
+    const cookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+    for (const cookie of cookies) headers.append('set-cookie', cookie);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },
