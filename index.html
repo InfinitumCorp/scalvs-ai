@@ -9,6 +9,23 @@
   <!-- UI follows /DESIGN.md: clean white, Helvetica Neue, text wordmarks with ™ -->
   <link rel="icon" href="public/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="src/styles.css">
+  <!-- Fetch every module at once instead of one import level at a time: on slow or
+       proxied connections the import chain otherwise leaves the page blank for seconds.
+       tests/preload.test.js keeps this list in step with src/. -->
+  <link rel="modulepreload" href="src/app.js">
+  <link rel="modulepreload" href="src/store.js">
+  <link rel="modulepreload" href="src/ui.js">
+  <link rel="modulepreload" href="src/billing.js">
+  <link rel="modulepreload" href="src/runner.js">
+  <link rel="modulepreload" href="src/forecaster.js">
+  <link rel="modulepreload" href="src/data.js">
+  <link rel="modulepreload" href="src/exchange.js">
+  <link rel="modulepreload" href="src/views/command.js">
+  <link rel="modulepreload" href="src/views/studio.js">
+  <link rel="modulepreload" href="src/connectors.js">
+  <link rel="modulepreload" href="src/views/connect.js">
+  <link rel="modulepreload" href="src/views/earnings.js">
+  <link rel="modulepreload" href="src/views/forecast.js">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -59,7 +76,7 @@
       </button>
       <a class="brand-sm" href="#/command" aria-label="SCALVS.ai home"><span class="wordmark">SCALVS.ai<sup class="tm">™</sup></span></a>
     </header>
-    <main id="main" tabindex="-1"></main>
+    <main id="main" tabindex="-1"><p class="muted" style="text-align:center;margin-top:30vh">Loading…</p></main>
   </div>
 
   <script type="module" src="src/app.js"></script>

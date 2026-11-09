@@ -21,6 +21,11 @@
   "ratelimits": [
     { "name": "API_LIMIT", "namespace_id": "1701", "simple": { "limit": 60, "period": 60 } }
   ],
+  // Connectors (api/connectors.js): encrypted tokens per visitor session. Wrangler
+  // provisions the namespace on first deploy. Secrets: CONNECT_SECRET (required),
+  // and per OAuth app GOOGLE_, MICROSOFT_, SLACK_, GITHUB_ + CLIENT_ID / CLIENT_SECRET.
+  // Each app's redirect URI is https://scalvs.app/api/oauth/callback.
+  "kv_namespaces": [{ "binding": "CONNECT" }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

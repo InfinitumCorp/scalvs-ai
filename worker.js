@@ -5,6 +5,7 @@
 // nodejs_compat fills from the Worker's vars and secrets.
 import * as run from './api/run.js';
 import * as forecast from './api/forecast.js';
+import * as connectors from './api/connectors.js';
 
 const ROUTES = { '/api/run': run, '/api/forecast': forecast };
 const SECURITY_HEADERS = {
@@ -15,7 +16,8 @@ const SECURITY_HEADERS = {
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
-    const api = ROUTES[pathname.replace(/\/$/, '')];
+    const isConnectors = pathname.startsWith('/api/connectors') || pathname === '/api/oauth/callback';
+    const api = isConnectors ? { [request.method]: connectors.handle } : ROUTES[pathname.replace(/\/$/, '')];
     if (!api) return env.ASSETS.fetch(request);
     const handler = api[request.method];
     if (!handler) return new Response('Method Not Allowed', { status: 405, headers: SECURITY_HEADERS });
@@ -32,6 +34,7 @@ export default {
     const response = await handler(request, env);
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
+    // redirects (OAuth) keep their Location; Response.redirect headers are immutable, so copy
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },
 };

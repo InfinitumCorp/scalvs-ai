@@ -1,10 +1,44 @@
 import { getState, update, addLedger, reset } from '../store.js';
 import { PLANS, DATASETS, REWARD_RULES } from '../data.js';
 import { esc, fmt, ago, toast } from '../ui.js';
+import { startUpgrade, openPortal } from '../billing.js';
 import {
   BUYERS, CATEGORIES, NEVER_SOLD, EXCHANGE_PRODUCTS, SHARE, SCLV_PER_USD, MIN_COHORT,
   ensureExchange, hasConsent, setConsent, withdrawAll, available, quoteSale, applySale,
 } from '../exchange.js';
+
+// Prices from the revenue catalog (src/catalog.ts in infinitum-revenue), per month.
+const PRICE = { free: '$0', pro: '$29 / month · 14-day trial', business: '$49 / seat / month', government: 'Contact sales' };
+let billingEmail = '';
+let billingBusy = false;
+
+async function choosePlan(id) {
+  const s = getState();
+  if (billingBusy || id === s.plan) return;
+  if (id === 'government') { toast('Government plans are sold by contract. Contact Infinitum sales.'); return; }
+  // Downgrades and plan changes for an existing subscription go through the Stripe portal.
+  if (id === 'free' || (s.billing?.apiKey && s.plan !== 'free')) { manageBilling(); return; }
+  billingBusy = true;
+  update(() => {});
+  try {
+    const { billing, url } = await startUpgrade({ billing: s.billing, planId: id, email: billingEmail, origin: location.origin });
+    update((st) => { st.billing = billing; });
+    location.assign(url);
+  } catch (err) {
+    toast(err.message);
+    if (err.code === 'email_required') document.querySelector('[name="billing-email"]')?.focus();
+  } finally {
+    billingBusy = false;
+    update(() => {});
+  }
+}
+
+async function manageBilling() {
+  const s = getState();
+  if (!s.billing?.apiKey) { toast('You are on the Free plan.'); return; }
+  try { location.assign(await openPortal({ billing: s.billing, origin: location.origin })); }
+  catch (err) { toast(err.message); }
+}
 
 // Global Privacy Control: a legally recognized "do not sell" signal.
 const gpc = () => typeof navigator !== 'undefined' && navigator.globalPrivacyControl === true;
@@ -107,25 +141,31 @@ export function render() {
     </tbody></table>` : '<p class="muted small">No simulated transactions. Task completion does not create rewards.</p>'}
   </section>
 
-  <section class="panel">
-    <div class="panel-head"><h2>Plans</h2></div>
+  <section class="panel" id="plans">
+    <div class="panel-head"><h2>Plans</h2>${s.billing?.apiKey && s.plan !== 'free'
+      ? '<button class="btn ghost sm" data-action="portal">Manage billing</button>' : ''}</div>
     <div class="plans">
       ${Object.entries(PLANS).map(([id, p]) => `
-      <button class="plan ${s.plan === id ? 'sel' : ''}" data-action="plan" data-id="${id}" aria-pressed="${s.plan === id}">
+      <button class="plan ${s.plan === id ? 'sel' : ''}" data-action="plan" data-id="${id}" aria-pressed="${s.plan === id}" ${billingBusy ? 'disabled' : ''}>
         <strong>${p.label}</strong>
+        <span class="small">${PRICE[id]}</span>
         <span class="small">${id === 'government' ? 'Contract' : `${p.agents}${id === 'business' ? '+' : ''} active agents`}</span>
         <span class="small muted">${p.workflow} workflows</span>
         <span class="small muted">Ads: ${p.ads}</span>
         <span class="small muted">${p.deploy}</span>
       </button>`).join('')}
     </div>
-    <p class="small muted">Switching plans here only changes prototype limits.</p>
+    ${s.billing?.apiKey ? `<p class="small muted">Billing email: ${esc(s.billing.email)}</p>` : `
+    <label class="small">Billing email <input type="email" name="billing-email" autocomplete="email" placeholder="you@company.com" value="${esc(billingEmail)}"></label>`}
+    <p class="small muted">Paid plans check out securely with Stripe. Cancel or change any time from Manage billing.</p>
   </section>
 
   <p class="center"><button class="btn ghost sm" data-action="reset">Reset prototype data</button></p>`;
 }
 
 export function bind(root) {
+  // Keep typed text across re-renders.
+  root.addEventListener('input', (e) => { if (e.target.name === 'billing-email') billingEmail = e.target.value; });
   root.addEventListener('change', (e) => {
     const t = e.target;
     if (t.dataset.action === 'ads') {
@@ -177,8 +217,9 @@ export function bind(root) {
       });
       toast(`+$${share.toFixed(2)} from ${ds.name}`);
     } else if (action === 'plan') {
-      update((st) => { st.plan = id; if (id !== 'free') st.wallet.adsOptIn = false; });
-      toast(`Switched to ${PLANS[id].label}`);
+      choosePlan(id);
+    } else if (action === 'portal') {
+      manageBilling();
     } else if (action === 'reset') {
       if (confirm('Reset all prototype data?')) { reset(); toast('Prototype reset'); }
     }

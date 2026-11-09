@@ -1,5 +1,6 @@
 import { getState, update, subscribe, plan } from './store.js';
-import { esc } from './ui.js';
+import { esc, toast } from './ui.js';
+import { readReturn, syncPlan } from './billing.js';
 import { checkLive, recoverInterrupted, clearFinished } from './runner.js';
 import * as command from './views/command.js';
 import * as studio from './views/studio.js';
@@ -96,7 +97,30 @@ document.getElementById('clear-recent').addEventListener('click', () => {
 });
 document.getElementById('scrim').addEventListener('click', () => document.body.classList.remove('nav-open'));
 
+// Back from Stripe Checkout or the billing portal (?billing=success|cancelled): open Plans and say what happened.
+const billingReturn = readReturn(location.search);
+if (billingReturn || location.search.includes('session_id=')) {
+  history.replaceState(null, '', `${location.pathname}#/earnings`);
+  if (billingReturn === 'success') toast('Payment complete. Your plan will update in a moment.');
+  else if (billingReturn === 'cancelled') toast('Checkout cancelled. No charge was made.');
+}
+
+// The paid plan comes from the revenue API, not from this browser.
+async function refreshPlan(attempts = 1) {
+  const { billing } = getState();
+  if (!billing?.apiKey) return;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const next = await syncPlan({ billing });
+      if (next !== getState().plan) update((st) => { st.plan = next; if (next !== 'free') st.wallet.adsOptIn = false; });
+      if (next !== 'free' || i === attempts - 1) return;
+    } catch { return; /* offline or API down: keep the last known plan */ }
+    await new Promise((r) => setTimeout(r, 2000)); // the Stripe webhook may land a moment after the redirect
+  }
+}
+
 navigate();
+refreshPlan(billingReturn === 'success' ? 5 : 1);
 recoverInterrupted();
 checkLive().then(() => renderView());
 checkForecastLive().then(() => { resumeForecasts(); renderView(); });

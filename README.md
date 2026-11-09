@@ -7,7 +7,7 @@ This is the first working prototype of the four-step flow from the [product page
 | Step | Screen | What works |
 |---|---|---|
 | 01 Create | **Agent Studio** | Six templates (Researcher, Writer, Coder, Sales rep, Operator, Support); name, role, instructions, tools, Context Vault, approval and schedule per agent; plan-based agent limits; multi-agent **teams** run in sequence (/CNDCTR/-style), each agent building on the previous output. |
-| 02 Connect | **Connect** | Toggle connections to your apps and Infinitum products (simulated); **Nexus Context Vault** entries with per-product permissions that agents read when memory is on. |
+| 02 Connect | **Connectors** | Real connectors over the open Model Context Protocol, like Claude's: Gmail, Google Calendar, Google Drive, Slack, GitHub, Microsoft 365 and a directory of remote MCP servers (Notion, Linear, Atlassian, Asana, monday.com, Intercom, Stripe, PayPal, Figma, Canva, Wix, Sentry, PostHog, Cloudflare, Vercel, Supabase, Neon, Hugging Face, DeepWiki, Context7, Cloudflare Docs), plus **custom connectors** by URL. Per-tool agent permissions, a tool tester, Infinitum products, and the **Nexus Context Vault**. |
 | 03 Run | **Command Center** | Chat-style composer to give an agent or team a task; agent output **streams in live**; **Stop** a running task; **human approval** gates; copy any agent's output; AI-credit meter per plan; schedules list. |
 | Predict | **Forecasts** | Swarm forecasts from **CONJURE™**, the Infinitum prediction model: paste seed material, ask a question, and persona agents simulate reactions on Twitter- and Reddit-style platforms before a ReportAgent writes the forecast. A starter question for every Infinitum product (pick it from the Product menu); **Forecast this** on any agent result; live stage progress; Stop; resumes after reload; chat with the ReportAgent. |
 | 04 Earn | **Earnings & Data Wallet** | Activity credits and capped **$SCLV** rewards on verified runs, **Data exchange** (sell usage data to ad platforms, data brokers and researchers with per-category, per-buyer consent; 85% paid back in $SCLV), ad revenue share in $SCLV (Free plan), data licensing with an 85% share, ledger, plan switcher. |
@@ -25,6 +25,29 @@ Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.j
 The composer shows which mode is active.
 
 Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. A streamed answer counts only when the stream ends with an explicit completion event; provider stream errors, early disconnects and text-less streams fail the step. Approval applies only to the currently pending draft and cannot advance a team twice. **Stop** aborts the in-flight request, marks the run stopped and releases queued steps' credit reservations (the started step keeps its charge); a stopped run cannot be approved or completed afterwards. Runs left `running` by a page reload are stopped on the next load. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
+
+## Connectors
+
+`api/connectors.js` (Worker routes `/api/connectors/*` and `/api/oauth/callback`) connects real accounts; agents then call the tools during runs (`api/run.js` tool loop, on Claude or Workers AI).
+
+- **Remote MCP servers** (`api/_mcp.js`, Streamable HTTP): sign-in follows the MCP authorization spec (`api/_oauth.js`): protected-resource metadata, authorization-server metadata, dynamic client registration, PKCE (S256) and the `resource` indicator, with refresh. Servers without registration fall back to a pasted token (GitHub, any custom server) or a pre-registered app (Asana).
+- **Built-in adapters** (`api/_native.js`): Gmail, Google Calendar, Google Drive, Microsoft 365 (Outlook, calendar, OneDrive) and Slack, which have no open MCP sign-in. They need the operator's OAuth app.
+- **Custom connectors:** anyone can add a remote MCP server by URL. Only public `https://` URLs are accepted (no private addresses).
+- **Permissions:** read-only tools are on for agents by default; tools that write (send, post, create) start off and are switched per tool on the Connect page. Agents are told tool output is data, not instructions.
+- **Storage:** tokens are sealed with AES-GCM (`CONNECT_SECRET`) in Workers KV (`CONNECT` binding), keyed by a hash of an HttpOnly session cookie. Tokens never reach the browser. There are no SCALVS.ai accounts yet, so the browser that holds the cookie owns its connections.
+
+Setup before deploying:
+
+| Secret | For |
+|---|---|
+| `CONNECT_SECRET` | required: any long random string |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Gmail, Calendar, Drive (enable those APIs) |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Microsoft 365 |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Slack (user token scopes) |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub sign-in (optional; a personal access token works without it) |
+| `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | Asana |
+
+Each OAuth app's redirect URI is `https://scalvs.app/api/oauth/callback`. Apps without their secrets show "needs setup". All other directory connectors work with no setup.
 
 ## Validation
 
