@@ -126,3 +126,28 @@ refreshPlan(billingReturn === 'success' ? 5 : 1);
 recoverInterrupted();
 checkLive().then(() => renderView());
 checkForecastLive().then(() => { resumeForecasts(); renderView(); });
+
+// ---------- Installable app (Chromebook, Windows, Mac): service worker + install button ----------
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('/sw.js').catch(() => { /* app still works without it */ });
+}
+let installPrompt = null;
+const installBtn = document.getElementById('install-btn');
+const standalone = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  if (installBtn && !standalone()) installBtn.hidden = false;
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  if (installBtn) installBtn.hidden = true;
+  toast('SCALVS.ai is installed. Open it from your apps.');
+});
+installBtn?.addEventListener('click', async () => {
+  if (!installPrompt) { toast('Use your browser menu: Install SCALVS.ai'); return; }
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
+  if (outcome === 'accepted') installBtn.hidden = true;
+  installPrompt = null;
+});

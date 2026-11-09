@@ -8,6 +8,10 @@
   <meta name="theme-color" content="#ffffff">
   <!-- UI follows /DESIGN.md: clean white, Helvetica Neue, text wordmarks with ™ -->
   <link rel="icon" href="public/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/public/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SCALVS">
   <link rel="stylesheet" href="src/styles.css">
   <!-- Fetch every module at once instead of one import level at a time: on slow or
        proxied connections the import chain otherwise leaves the page blank for seconds.
@@ -68,6 +72,10 @@
       <ul id="recent-list" class="recent-list"></ul>
     </div>
     <div class="sidebar-foot">
+      <button type="button" id="install-btn" class="btn sm install-btn" hidden>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Install app
+      </button>
       <a class="account" href="#/earnings">
         <span class="avatar" aria-hidden="true">IN</span>
         <span><span class="small">Infinitum</span><br><span class="muted tiny" id="plan-label">Free plan</span></span>

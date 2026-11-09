@@ -1,3 +1,4 @@
+import { PLUGINS, pluginsPanel, setPlugin } from '../grok.js';
 // Connect: real connectors (remote MCP servers and built-in app adapters, signed in
 // through api/connectors.js) plus Infinitum products and the Nexus Context Vault.
 // Tokens stay on the server; this page only sees names, status and tool lists.
@@ -171,6 +172,8 @@ export function render() {
     </form>
   </section>
 
+  ${pluginsPanel()}
+
   <section class="panel">
     <div class="panel-head"><h2>Infinitum Nexus</h2><span class="tag">built in</span></div>
     <ul class="list">
@@ -236,6 +239,13 @@ async function connect(id, token) {
 function setConnection(id, connection) { remote.connections[id] = connection; rerender(); }
 
 export function bind(root, rerenderView) {
+  root.addEventListener('change', (e) => {
+    const id = e.target.dataset?.plugin;
+    if (!id) return;
+    setPlugin(id, e.target.checked);
+    toast(`${e.target.checked ? 'Enabled' : 'Disabled'} ${PLUGINS.find((p) => p.id === id)?.name}`);
+    rerenderView();
+  });
   rerender = rerenderView;
   // Back from an OAuth sign-in: #/connect?connected=id or ?connect_error=…
   const params = new URLSearchParams(location.hash.split('?')[1] || '');

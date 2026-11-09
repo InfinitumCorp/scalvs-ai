@@ -1,6 +1,7 @@
 import { getState } from '../store.js';
 import { TEMPLATES } from '../data.js';
-import { startRun, approve, reject, stopRun, isLive, mediaFor } from '../runner.js';
+import { startRun, approve, reject, stopRun, isLive, mediaFor, chainOf } from '../runner.js';
+import { update, uid } from '../store.js';
 import { MODES, PERSONALITIES, composerExtras, bindExtras, takeAttachments, attachState, shareRun, speak, createAutomation } from '../grok.js';
 import { esc, md, statusLabel, toast } from '../ui.js';
 import { setDraft } from '../forecaster.js';
@@ -49,6 +50,8 @@ function message(r, st, i) {
       <button class="tool" data-action="speak" data-id="${r.id}" data-step="${i}" aria-label="Read ${esc(st.name)}'s answer aloud">Read aloud</button>
       ${r.private ? '' : `<button class="tool" data-action="share" data-id="${r.id}" aria-label="Create a share link for this chat">Share</button>`}
       <button class="tool" data-action="automate" data-id="${r.id}" aria-label="Run this task on a schedule">Automate</button>
+      <button class="tool" data-action="regenerate" data-id="${r.id}" aria-label="Regenerate this answer">Regenerate</button>
+      ${r.private ? '' : `<button class="tool" data-action="remember" data-id="${r.id}" data-step="${i}" aria-label="Save this answer to memory">Remember</button>`}
       ${st.status === 'done' ? `<button class="tool" data-action="forecast" data-id="${r.id}" data-step="${i}" aria-label="Forecast reactions to ${esc(st.name)}'s answer">Forecast this</button>` : ''}
     </div>` : '';
   return `
@@ -85,11 +88,11 @@ function thread(r) {
   </div>`;
 }
 
-function composer(s, running, live) {
+function composer(s, running, live, followUp = false) {
   return `
   <form id="run-form" class="composer">
     ${composerExtras('top')}
-    <textarea name="task" rows="1" maxlength="6000" required placeholder="Give your agents a task" title="${esc(exampleFor())}" aria-label="Task">${esc(taskDraft)}</textarea>
+    <textarea name="task" rows="1" maxlength="6000" required placeholder="${followUp ? 'Ask a follow-up' : 'Give your agents a task'}" title="${esc(exampleFor())}" aria-label="Task">${esc(taskDraft)}</textarea>
     <div class="composer-bar">
       <select name="target" aria-label="Agent or team" class="pill-select">
         ${s.agents.length ? `<optgroup label="Agents">${s.agents.map((a) => `<option value="agent:${a.id}" ${target === `agent:${a.id}` ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</optgroup>` : ''}
@@ -121,8 +124,8 @@ export function render() {
   }
   return `
   <section class="chat">
-    ${thread(r)}
-    <div class="dock">${composer(s, running, live)}</div>
+    ${chainOf(r.id).map(thread).join('')}
+    <div class="dock">${composer(s, running, live, true)}</div>
   </section>`;
 }
 
@@ -158,6 +161,8 @@ export function bind(root, rerender) {
     const agentIds = kind === 'team' ? (s.teams.find((t) => t.id === id)?.agentIds || []) : [id];
     const title = kind === 'team' ? s.teams.find((t) => t.id === id)?.name : undefined;
     const opts = takeAttachments();
+    const open = selectedRun();
+    if (open && open.status !== 'running' && open.status !== 'awaiting_approval') { opts.parentId = open.id; if (open.private) opts.private = true; }
     const res = startRun({ task, agentIds, title, opts });
     if (res.error) { toast(res.error); return; }
     taskDraft = '';
@@ -175,6 +180,21 @@ export function bind(root, rerender) {
       const out = run?.steps[Number(el.dataset.step)]?.output || '';
       setDraft({ seed: out.slice(0, 60000), question: `How will people react to this, and what happens next? (${run.task.slice(0, 160)})`, product: 'SCALVS.ai' });
       location.hash = '#/forecast';
+    }
+    else if (action === 'regenerate') {
+      const run = getState().runs.find((x) => x.id === id);
+      if (!run) return;
+      const res = startRun({ task: run.task, agentIds: run.steps.map((st) => st.agentId), title: run.title, opts: { mode: run.kind || 'auto', parentId: run.parentId, private: run.private } });
+      if (res.error) { toast(res.error); return; }
+      location.hash = `#/command?run=${res.run.id}`;
+    }
+    else if (action === 'remember') {
+      const run = getState().runs.find((x) => x.id === id);
+      const out = run?.steps[Number(el.dataset.step)]?.output || '';
+      if (!out) return;
+      const text = `From "${run.task.slice(0, 80)}": ${out.replace(/\s+/g, ' ').slice(0, 380)}`;
+      update((st) => { st.vault.unshift({ id: uid('mem'), text, products: ['SCALVS.ai'] }); });
+      toast('Saved to memory (Connect → Nexus Context Vault)');
     }
     else if (action === 'speak') {
       const run = getState().runs.find((x) => x.id === id);

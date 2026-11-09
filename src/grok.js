@@ -176,3 +176,45 @@ export async function createAutomation(run) {
     location.hash = '#/automations';
   } catch (e) { toast(e.message); }
 }
+
+// ---------- Plug-ins: tools the agent may call (api/plugins.js), per browser ----------
+export const PLUGINS = [
+  { id: 'calculator', name: 'Calculator', desc: 'Exact arithmetic: percentages, powers, roots, logs.' },
+  { id: 'weather', name: 'Weather', desc: 'Current weather and a 3-day forecast anywhere (Open-Meteo).' },
+  { id: 'currency', name: 'Currency', desc: 'Live exchange rates and conversions (ECB data).' },
+  { id: 'wikipedia', name: 'Wikipedia', desc: 'Encyclopedia summaries with links.' },
+  { id: 'reader', name: 'Web reader', desc: 'Reads the text of a public web page you link.' },
+  { id: 'clock', name: 'World clock', desc: 'Current date and time in any time zone.' },
+];
+const PLUGIN_KEY = 'scalvs.plugins';
+export function enabledPlugins() {
+  try {
+    const v = JSON.parse(localStorage.getItem(PLUGIN_KEY));
+    if (Array.isArray(v)) return v.filter((id) => PLUGINS.some((p) => p.id === id));
+  } catch { /* storage blocked */ }
+  return ['calculator', 'weather', 'currency', 'clock']; // sensible defaults
+}
+export function setPlugin(id, on) {
+  const set = new Set(enabledPlugins());
+  if (on) set.add(id); else set.delete(id);
+  try { localStorage.setItem(PLUGIN_KEY, JSON.stringify([...set])); } catch { /* storage blocked */ }
+}
+
+export function pluginsPanel() {
+  const on = enabledPlugins();
+  return `
+  <section class="panel" id="plugins">
+    <div class="panel-head"><h2>Plug-ins</h2><span class="tag">${on.length} on</span></div>
+    <p class="muted small">Tools your agents can call while they work. Free, no sign-in.</p>
+    <ul class="list">
+      ${PLUGINS.map((p) => `
+      <li class="list-row">
+        <div class="list-main">
+          <span class="dot ${on.includes(p.id) ? 'on' : ''}" aria-hidden="true"></span>
+          <div><strong>${esc(p.name)}</strong><p class="muted small">${esc(p.desc)}</p></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-plugin="${p.id}" ${on.includes(p.id) ? 'checked' : ''} aria-label="Use the ${esc(p.name)} plug-in"></label>
+      </li>`).join('')}
+    </ul>
+  </section>`;
+}

@@ -4,6 +4,7 @@
 
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
+import { enabledPlugins } from './grok.js';
 
 let liveStatus = null; // null = unknown, true = live model, false = demo
 const API_URL = 'api/run'; // relative, so the app also works from a subfolder
@@ -121,6 +122,8 @@ async function callAgent(agent, task, previous, { signal, onText = () => {}, opt
         personality: opts.personality,
         images: opts.images,
         files: opts.files,
+        plugins: enabledPlugins(),
+        history: opts.history,
       }),
     });
     if (res.status === 503) {
@@ -172,6 +175,21 @@ export function creditUsage() {
   return { used: s.wallet.creditsUsed, reserved, available: Math.max(0, plan().credits - s.wallet.creditsUsed - reserved) };
 }
 
+// The conversation a follow-up continues: each earlier run's task and final answer.
+export function chainOf(runId) {
+  const runs = getState().runs;
+  const chain = [];
+  for (let r = runs.find((x) => x.id === runId); r && chain.length < 12; r = runs.find((x) => x.id === r.parentId)) chain.unshift(r);
+  return chain;
+}
+function historyFor(parentId) {
+  if (!parentId) return [];
+  return chainOf(parentId).flatMap((r) => {
+    const answer = [...r.steps].reverse().find((st) => st.output)?.output || '';
+    return [{ role: 'user', content: r.task }, ...(answer ? [{ role: 'assistant', content: answer.slice(0, 4000) }] : [])];
+  });
+}
+
 export function startRun({ task, agentIds, title, opts = {} }) {
   if (typeof task !== 'string' || !task.trim() || task.length > 6000) return { error: 'Enter a task between 1 and 6000 characters.' };
   if (!Array.isArray(agentIds) || !agentIds.length || agentIds.some(id => !findAgent(id))) return { error: 'Choose existing agents for every team step.' };
@@ -191,10 +209,11 @@ export function startRun({ task, agentIds, title, opts = {} }) {
     current: 0,
     steps: steps.map((a) => ({ agentId: a.id, name: a.name, status: 'queued', output: '', mode: null })),
     kind: opts.mode && opts.mode !== 'auto' ? opts.mode : undefined,
+    parentId: opts.parentId || undefined,
     private: opts.private || undefined,
     attached: [...(opts.images || []).map(() => 'image'), ...(opts.files || []).map((f) => f.name)],
   };
-  runOpts.set(run.id, opts);
+  runOpts.set(run.id, { ...opts, history: historyFor(opts.parentId) });
   update((st) => {
     st.runs.unshift(run);
     let finished = 0;

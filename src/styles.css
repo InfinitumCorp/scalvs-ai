@@ -427,3 +427,10 @@ details.small ul, details.small p { margin: 8px 0 0; }
   .composer-bar .pill-select { max-width: 7.5rem; font-size: 12.5px; }
   .shots { grid-template-columns: 1fr; }
 }
+.install-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-bottom: 10px; }
+.install-btn[hidden] { display: none; }
+/* Installed app with a custom title bar (window-controls-overlay): keep the top bar clear of the OS buttons. */
+@media (display-mode: window-controls-overlay) {
+  .topbar { padding-left: env(titlebar-area-x, 0); padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)); -webkit-app-region: drag; }
+  .topbar button, .topbar a { -webkit-app-region: no-drag; }
+}
