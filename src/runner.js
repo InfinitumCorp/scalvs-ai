@@ -86,19 +86,24 @@ export async function readStream(res, onText = () => {}) {
   return full;
 }
 
+export function agentPayload(agent, task, previous, geoRouting = false) {
+  return {
+    agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
+    context: vaultFor(agent),
+    task,
+    previous,
+    stream: true,
+    ...(geoRouting === true ? { geoRouting: true } : {}),
+  };
+}
+
 async function callAgent(agent, task, previous, { signal, onText = () => {} } = {}) {
   if (liveStatus !== false) {
     const res = await fetch(API_URL, {
       method: 'POST',
       signal,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
-        context: vaultFor(agent),
-        task,
-        previous,
-        stream: true,
-      }),
+      body: JSON.stringify(agentPayload(agent, task, previous, getState().geoRouting === true)),
     });
     if (res.status === 503) {
       liveStatus = false;

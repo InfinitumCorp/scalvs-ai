@@ -5,3 +5,5 @@ dist/
 .env
 .env.local
 .DS_Store
+data/geo/
+data/geo-settings.json

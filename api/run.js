@@ -10,6 +10,7 @@
 // never simulated successes.
 
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
+import { annotateRequest, withGeo } from './geo.js';
 
 const apiUrl = () => `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '')}/v1/messages`;
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
@@ -76,8 +77,10 @@ export async function POST(request, env) {
     : task;
 
   const stream = body.stream === true;
+  const geo = await annotateRequest(request, body, env);
+  const finish = (response) => withGeo(response, geo);
 
-  if (!key) return runWorkersAi(env, buildSystemPrompt(body.agent, body.context), userContent, stream);
+  if (!key) return finish(await runWorkersAi(env, buildSystemPrompt(body.agent, body.context), userContent, stream));
 
   try {
     const upstream = await fetch(apiUrl(), {
@@ -98,10 +101,10 @@ export async function POST(request, env) {
     });
 
     if (!upstream.ok) {
-      return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
+      return finish(json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502));
     }
 
-    if (stream) return relayStream(upstream);
+    if (stream) return finish(relayStream(upstream));
 
     const data = await upstream.json();
     const output = (Array.isArray(data.content) ? data.content : [])
@@ -110,10 +113,10 @@ export async function POST(request, env) {
       .join('\n')
       .trim();
 
-    if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
-    return json({ mode: 'live', model: data.model, output, usage: data.usage || null });
+    if (!output) return finish(json({ error: 'The model returned no text. Please retry.' }, 502));
+    return finish(json({ mode: 'live', model: data.model, output, usage: data.usage || null }));
   } catch {
-    return json({ error: 'The model request could not complete. Please retry.' }, 502);
+    return finish(json({ error: 'The model request could not complete. Please retry.' }, 502));
   }
 }
 
