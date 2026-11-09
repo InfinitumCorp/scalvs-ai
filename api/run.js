@@ -13,6 +13,7 @@
 // simulated successes.
 
 import { geminiEndpoint, geminiModel, geminiRequestBody, geminiText, geminiUsage, hasGemini, relayGeminiStream } from './_gemini.js';
+import { dynamoEnabled, emitMetric, sqsEnabled } from './_aws.js';
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
 
 const apiUrl = () => `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '')}/v1/messages`;
@@ -108,10 +109,15 @@ export async function POST(request, env) {
   for (const provider of providers) {
     const result = await attemptProvider(provider, ctx);
     if (result === RATE_LIMITED) { sawRateLimit = true; continue; }
-    return result;
+    return finish(result);
   }
-  if (sawRateLimit) return json({ error: 'The model is rate limited. Please retry shortly.' }, 429);
+  if (sawRateLimit) return finish(json({ error: 'The model is rate limited. Please retry shortly.' }, 429));
   return json({ mode: 'demo', error: 'No model is configured' }, 503);
+}
+
+function finish(response) {
+  if (response?.status === 502 || response?.status === 429) emitMetric('AgentRunErrors');
+  return response;
 }
 
 async function attemptProvider(provider, ctx) {
@@ -278,5 +284,10 @@ async function attemptGemini({ system, user, stream, signal }) {
 }
 
 export function GET(_request, env) {
-  return json({ ok: true, live: configuredProviders(env).length > 0 });
+  return json({
+    ok: true,
+    live: configuredProviders(env).length > 0,
+    queue: sqsEnabled(),
+    state: dynamoEnabled(),
+  });
 }

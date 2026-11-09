@@ -5,6 +5,8 @@
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES } from './data.js';
 import { creditUsage } from './runner.js';
+import { noteServiceFlags, queueEnabled } from './remote.js';
+import { postQueued } from './queue.js';
 
 const API_URL = 'api/forecast';
 export const POLL_MS = 4000;
@@ -33,7 +35,9 @@ export function takeDraft() { const d = draft; draft = null; return d; }
 export async function checkForecastLive() {
   try {
     const res = await fetch(API_URL, { method: 'GET' });
-    liveStatus = Boolean((await res.json()).live);
+    const data = await res.json();
+    liveStatus = Boolean(data.live);
+    noteServiceFlags(data);
   } catch {
     liveStatus = false;
   }
@@ -42,6 +46,10 @@ export async function checkForecastLive() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const post = async (body) => {
+  if (queueEnabled()) {
+    const queued = await postQueued('forecast', body);
+    if (queued) return queued;
+  }
   const res = await fetch(API_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   return { res, data };

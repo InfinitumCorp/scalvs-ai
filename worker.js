@@ -6,15 +6,19 @@
 import * as run from './api/run.js';
 import * as forecast from './api/forecast.js';
 import * as google from './api/google.js';
+import * as jobs from './api/jobs.js';
+import * as state from './api/state.js';
+import { bindWaitUntil } from './api/_aws.js';
 
-const ROUTES = { '/api/run': run, '/api/forecast': forecast };
+const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/jobs': jobs, '/api/state': state };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    bindWaitUntil(ctx && typeof ctx.waitUntil === 'function' ? (promise) => ctx.waitUntil(promise) : null);
     const { pathname } = new URL(request.url);
     const path = pathname.replace(/\/$/, '') || '/';
     const api = path.startsWith('/api/google') ? google : ROUTES[path];

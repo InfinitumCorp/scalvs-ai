@@ -9,8 +9,10 @@ import { fileURLToPath } from 'node:url';
 import * as runApi from './api/run.js';
 import * as forecastApi from './api/forecast.js';
 import * as googleApi from './api/google.js';
+import * as jobsApi from './api/jobs.js';
+import * as stateApi from './api/state.js';
 
-const APIS = { '/api/run': runApi, '/api/forecast': forecastApi };
+const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/jobs': jobsApi, '/api/state': stateApi };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);

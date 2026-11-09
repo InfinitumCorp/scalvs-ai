@@ -68,7 +68,7 @@ Google and Meta generally do not buy broker data outright. Their routes are thei
 
 ## Run locally
 
-No dependencies, no build step. Node 20+.
+No install is required for demo mode. Node 20+. `npm install` is needed for Wrangler and, only if you turn AWS on, for `aws4fetch` (the signer). The dev server does not load it unless an AWS call is actually made.
 
 ```bash
 cd scalvs
@@ -108,6 +108,13 @@ Set secrets with `npx wrangler secret put <NAME>`, or put them in a git-ignored 
 | `GOOGLE_REDIRECT_URI` | var | Optional. Defaults to this host's `/api/google/callback`. |
 | `CONJURE_URL` | var | CONJURE™ engine base URL. Must be private or behind a token-checking proxy. |
 | `CONJURE_TOKEN` | secret | Token for that proxy. |
+| `AWS_REGION` | var | Required before any AWS adapter turns on, together with the two keys below. |
+| `AWS_ACCESS_KEY_ID` | secret | IAM access key. Least privilege for the adapters you enable. |
+| `AWS_SECRET_ACCESS_KEY` | secret | IAM secret key. |
+| `AWS_SESSION_TOKEN` | secret | Optional temporary credential. |
+| `AWS_SQS_QUEUE_URL` | var | Standard queue URL. Off when unset, and the synchronous run/forecast path is used. |
+| `AWS_DYNAMODB_TABLE` | var | Provisioned Standard table name. Off when unset; the browser keeps localStorage. |
+| `AWS_CLOUDWATCH_NAMESPACE` | var | Custom-metric namespace. Off when unset. Do not use an `AWS/` prefix. |
 
 There's no database: agent state stays in the browser (`localStorage`). Google OAuth tokens, when connectors are enabled, are encrypted with AES-GCM and kept in an HttpOnly cookie instead. This app has no Supabase schema.
 
@@ -125,6 +132,35 @@ Optional. Nothing calls Google unless both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT
 
 Create a Web application OAuth client in a Google Cloud project and leave billing off. Enable the Gmail, Google Drive and Google Calendar APIs. Register the redirect URI `https://<host>/api/google/callback` (locally, `http://localhost:3000/api/google/callback`). The refresh token and access token are sealed with AES-GCM before they are stored. Set `GOOGLE_TOKEN_KEY` to a 32-byte key, or leave it unset to derive one from `GOOGLE_CLIENT_SECRET`. Disconnecting the last Google connector revokes the token.
 
+## AWS Always Free
+
+Optional, and off with no change to demo or live behavior unless `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and that service's own variable are set. These adapters do not call Bedrock or any other paid AWS API. Confirm the current Always Free numbers on the AWS Free Tier page before enabling them; the code is shaped for the limits below.
+
+| Service | Turns on with | Always Free shape used here |
+|---|---|---|
+| SQS | `AWS_SQS_QUEUE_URL` | Standard queue. 1 million requests per month. A step is one send, one short receive (`WaitTimeSeconds` 0), and one delete. |
+| DynamoDB | `AWS_DYNAMODB_TABLE` | One provisioned Standard table at 25 RCU and 25 WCU, 25 GB. On-demand (`PAY_PER_REQUEST`) is not used and bills. |
+| CloudWatch | `AWS_CLOUDWATCH_NAMESPACE` | Two custom metrics and no dimensions: `AgentRunErrors` and `QueueFailures`. The first 10 custom metrics are free. Dimensions would each count as another metric. Puts are best-effort and do not delay or fail the request. |
+
+Create the queue and the table yourself. Do not switch the table to on-demand.
+
+```bash
+aws sqs create-queue --queue-name scalvs-jobs \
+  --attributes VisibilityTimeout=90,ReceiveMessageWaitTimeSeconds=0
+aws dynamodb create-table --table-name scalvs-state \
+  --attribute-definitions AttributeName=pk,AttributeType=S \
+  --key-schema AttributeName=pk,KeyType=HASH \
+  --billing-mode PROVISIONED \
+  --provisioned-throughput ReadCapacityUnits=25,WriteCapacityUnits=25 \
+  --table-class STANDARD
+```
+
+SQS holds one agent step or one forecast step so a Worker timeout can be retried from the message. `POST /api/run` and `POST /api/forecast` stay synchronous when the queue URL is unset. A step larger than 200 KB is refused by the queue and the client uses the synchronous path. Visibility is 90 seconds. A message received more than three times is dropped.
+
+DynamoDB stores one item per profile code (`pk`) so a second browser can load the same agents, runs, and vault. localStorage remains the default and the on-device copy. The item is capped at 20 KB: one write is then 20 WCU, under the 25 WCU ceiling, and an eventually consistent read of that item is a few RCU, under the 25 RCU ceiling. Larger state is kept only in the browser. The profile code is the access key for that item. The Connect screen shows it only when this adapter is on.
+
+Give the IAM user only `sqs:SendMessage`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:ChangeMessageVisibility` on that queue, `dynamodb:GetItem` and `dynamodb:PutItem` on that table, and `cloudwatch:PutMetricData` for the namespace. Do not grant Bedrock.
+
 ## Structure
 
 ```
@@ -141,6 +177,11 @@ api/run.js            agent step (Claude, then Workers AI, then optional Gemini)
 api/_gemini.js        Google AI Studio Gemini client
 api/google.js         Google Workspace OAuth connectors
 api/_google.js        PKCE, AES-GCM token cookie, Gmail/Drive/Calendar calls
+api/_aws.js           optional SQS, DynamoDB, and CloudWatch (Always Free)
+api/jobs.js           optional SQS step queue
+api/state.js          optional DynamoDB profile store
+src/queue.js          client: use the queue only when the server enabled it
+src/remote.js         client: localStorage sync when DynamoDB is enabled
 api/forecast.js       CONJURE™ forecast proxy
 api/_conjure.js       CONJURE™ client + one-step-per-call job state machine
 src/forecaster.js     browser forecast driver, demo mode, resume, ReportAgent chat

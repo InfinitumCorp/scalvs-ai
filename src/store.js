@@ -92,6 +92,19 @@ export function reset() {
   listeners.forEach((fn) => fn(state));
 }
 
+export function replaceState(next) {
+  if (!next || typeof next !== 'object' || Array.isArray(next) || !Array.isArray(next.agents)) return;
+  state = next;
+  persist();
+  listeners.forEach((fn) => fn(state));
+}
+
+export function stamp(at = Date.now()) {
+  state.updatedAt = at;
+  persist();
+  return state.updatedAt;
+}
+
 export const plan = () => PLANS[state.plan];
 
 export function addLedger(entry) {

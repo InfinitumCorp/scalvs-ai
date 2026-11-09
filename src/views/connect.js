@@ -2,6 +2,7 @@ import { getState, update, uid } from '../store.js';
 import { CONNECTORS } from '../data.js';
 import { esc, toast } from '../ui.js';
 import { GOOGLE_IDS, connectorMode, googlePost, googleStatus } from '../google.js';
+import { adoptProfile, enableRemoteState, profileId, remoteStateEnabled, startRemoteSync } from '../remote.js';
 
 const PRODUCTS = ['SCALVS.ai', '+SPCTR', 'VEIL</>', 'METATRON¹⁰⁰', 'FABRIC'];
 
@@ -19,6 +20,20 @@ function lede() {
   if (!remote) return 'Accounts, apps and every Infinitum product.';
   if (remote.configured) return 'Email, Docs & files, and Calendar can use your Google account after you consent. Other connections stay simulated in this prototype.';
   return 'Accounts, apps and every Infinitum product. Connections are simulated in this prototype.';
+}
+
+function syncPanel() {
+  if (!remoteStateEnabled()) return '';
+  return `
+  <section class="panel">
+    <div class="panel-head"><h2>Sync across devices</h2><span class="tag">your AWS account</span></div>
+    <p class="small muted">This code is the key to the copy stored in your DynamoDB table. Treat it like a password. This browser still keeps its own local copy.</p>
+    <p><code>${esc(profileId())}</code></p>
+    <form id="profile-form" class="row gap inline-form">
+      <input name="profile" required minlength="32" maxlength="32" pattern="[a-f0-9]{32}" placeholder="Paste a profile code from another device" aria-label="Profile code">
+      <button class="btn sm" type="submit">Use code</button>
+    </form>
+  </section>`;
 }
 
 function googlePanel() {
@@ -91,6 +106,7 @@ export function render() {
     <h1>Plug in your world</h1>
     <p class="lede">${lede()}</p>
   </header>
+  ${syncPanel()}
   ${googlePanel()}
   ${groups.map((g) => `
   <section class="panel">
@@ -159,6 +175,14 @@ export function bind(root, rerender) {
       rerender();
     });
   }
+  if (!remoteStateEnabled()) {
+    fetch('api/state').then((res) => (res.ok ? res.json() : null)).then((data) => {
+      if (!root.isConnected || !data?.enabled) return;
+      enableRemoteState();
+      startRemoteSync();
+      rerender();
+    }).catch(() => {});
+  }
 
   root.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-action]');
@@ -207,6 +231,14 @@ export function bind(root, rerender) {
   });
   root.addEventListener('submit', async (e) => {
     const form = e.target;
+    if (form.id === 'profile-form') {
+      e.preventDefault();
+      const id = String(new FormData(form).get('profile') || '').trim();
+      const ok = await adoptProfile(id);
+      toast(ok ? 'Profile code saved' : 'Enter the 32-character profile code');
+      if (ok) rerender();
+      return;
+    }
     if (form.id === 'vault-form') {
       e.preventDefault();
       const text = new FormData(form).get('text').trim();

@@ -13,6 +13,7 @@
 
 import { advanceJob, createJob, conjureClient, LIMITS } from './_conjure.js';
 import { advanceLocal, chatLocal } from './_conjure-local.js';
+import { dynamoEnabled, sqsEnabled } from './_aws.js';
 import { hasWorkersAi, workersAiComplete, workersAiModel } from './_workers-ai.js';
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
@@ -158,5 +159,10 @@ export async function POST(request, env) {
 }
 
 export function GET(_request, env) {
-  return json({ ok: true, live: Boolean(config().baseUrl) || hasWorkersAi(env) });
+  return json({
+    ok: true,
+    live: Boolean(config().baseUrl) || hasWorkersAi(env),
+    queue: sqsEnabled(),
+    state: dynamoEnabled(),
+  });
 }
