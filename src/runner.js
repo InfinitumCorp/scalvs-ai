@@ -4,6 +4,8 @@
 
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
+import { noteServiceFlags, queueEnabled } from './remote.js';
+import { postQueued } from './queue.js';
 
 let liveStatus = null; // null = unknown, true = live model, false = demo
 const API_URL = 'api/run'; // relative, so the app also works from a subfolder
@@ -14,6 +16,7 @@ export async function checkLive() {
     const res = await fetch(API_URL, { method: 'GET' });
     const data = await res.json();
     liveStatus = Boolean(data.live);
+    noteServiceFlags(data);
   } catch {
     liveStatus = false;
   }
@@ -47,7 +50,7 @@ function demoOutput(agent, task, previous) {
     `- ${plans[0]}: done using ${agent.tools.slice(0, 2).join(' and ') || 'built-in reasoning'}.\n` +
     `- ${plans[1]}: completed.\n` +
     `- ${plans[2]}: ready for review.\n\n` +
-    `*Demo mode: simulated response. Add ANTHROPIC_API_KEY to the deployment to have ${agent.name} produce real work.*`;
+    `*Demo mode: simulated response. Add ANTHROPIC_API_KEY or GEMINI_API_KEY to the deployment to have ${agent.name} produce real work.*`;
 }
 
 const abortError = () => new DOMException('Stopped', 'AbortError');
@@ -87,6 +90,27 @@ export async function readStream(res, onText = () => {}) {
 }
 
 async function callAgent(agent, task, previous, { signal, onText = () => {} } = {}) {
+  if (liveStatus !== false && queueEnabled()) {
+    const queued = await postQueued('run', {
+      agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
+      context: vaultFor(agent),
+      task,
+      previous,
+    }, { signal });
+    if (queued) {
+      if (queued.res.status === 503) liveStatus = false;
+      else {
+        if (!queued.res.ok) throw new Error(queued.data.error || `Request failed (${queued.res.status})`);
+        const output = queued.data.output;
+        if (queued.data.mode !== 'live' || typeof output !== 'string' || !output.trim()) {
+          throw new Error(queued.data.error || 'The model returned no valid output. Please retry.');
+        }
+        onText(output);
+        liveStatus = true;
+        return { output, mode: 'live' };
+      }
+    }
+  }
   if (liveStatus !== false) {
     const res = await fetch(API_URL, {
       method: 'POST',

@@ -1,6 +1,7 @@
 import { getState, update, subscribe, plan } from './store.js';
 import { esc } from './ui.js';
 import { checkLive, recoverInterrupted, clearFinished } from './runner.js';
+import { startRemoteSync } from './remote.js';
 import * as command from './views/command.js';
 import * as studio from './views/studio.js';
 import * as connect from './views/connect.js';
@@ -98,5 +99,5 @@ document.getElementById('scrim').addEventListener('click', () => document.body.c
 
 navigate();
 recoverInterrupted();
-checkLive().then(() => renderView());
+checkLive().then(() => { startRemoteSync(); renderView(); });
 checkForecastLive().then(() => { resumeForecasts(); renderView(); });

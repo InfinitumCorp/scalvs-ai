@@ -8,8 +8,11 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as runApi from './api/run.js';
 import * as forecastApi from './api/forecast.js';
+import * as googleApi from './api/google.js';
+import * as jobsApi from './api/jobs.js';
+import * as stateApi from './api/state.js';
 
-const APIS = { '/api/run': runApi, '/api/forecast': forecastApi };
+const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/jobs': jobsApi, '/api/state': stateApi };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -21,9 +24,9 @@ const TYPES = {
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    const api = APIS[url.pathname];
+    const api = url.pathname.startsWith('/api/google') ? googleApi : APIS[url.pathname];
     if (api) {
-      const handler = api[req.method];
+      const handler = url.pathname.startsWith('/api/google') ? googleApi.handle : api[req.method];
       if (!handler) { res.writeHead(405).end(); return; }
       const chunks = [];
       for await (const c of req) chunks.push(c);
@@ -31,7 +34,14 @@ createServer(async (req, res) => {
       res.on('close', () => abort.abort());
       const request = new Request(url, { method: req.method, headers: req.headers, signal: abort.signal, body: chunks.length ? Buffer.concat(chunks) : undefined });
       const response = await handler(request);
-      res.writeHead(response.status, Object.fromEntries(response.headers));
+      const headers = {};
+      for (const [key, value] of response.headers) {
+        if (key.toLowerCase() === 'set-cookie') continue;
+        headers[key] = value;
+      }
+      const cookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+      if (cookies.length) headers['set-cookie'] = cookies;
+      res.writeHead(response.status, headers);
       if (!response.body) { res.end(); return; }
       const reader = response.body.getReader();
       try {
