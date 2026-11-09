@@ -280,7 +280,8 @@ export function startI18n(options) {
     const go = () => {
       i18n.dom = translateDom(i18n, options.root ?? doc.body);
       const host = typeof options.switcher === "string" ? doc.querySelector(options.switcher) : options.switcher;
-      if (host) host.append(languageSwitcher(i18n, { label: i18n.lookup("Language") ?? "Language" }));
+      // No menu until there is a second language to choose.
+      if (host && i18n.locales.length > 1) host.append(languageSwitcher(i18n, { label: i18n.lookup("Language") ?? "Language" }));
     };
     if (doc.readyState === "loading") doc.addEventListener("DOMContentLoaded", go, { once: true }); else go();
   }
