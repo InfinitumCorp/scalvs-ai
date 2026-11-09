@@ -185,7 +185,10 @@ export function render() {
             <span class="dot ${on ? 'on' : ''}" aria-hidden="true"></span>
             <div><strong>${esc(c.name)}</strong><p class="muted small">${esc(c.desc)}</p></div>
           </div>
-          <button class="btn sm ${on ? '' : 'primary'}" data-action="toggle-builtin" data-id="${c.id}" aria-pressed="${on}">${on ? 'Disconnect' : 'Connect'}</button>
+          <div class="row-actions">
+            ${c.url ? `<a class="btn sm" href="${esc(c.url)}" target="_blank" rel="noopener" aria-label="Open ${esc(c.name)} (opens in a new tab)">Open ↗</a>` : ''}
+            <button class="btn sm ${on ? '' : 'primary'}" data-action="toggle-builtin" data-id="${c.id}" aria-pressed="${on}">${on ? 'Disconnect' : 'Connect'}</button>
+          </div>
         </li>`;
       }).join('')}
     </ul>

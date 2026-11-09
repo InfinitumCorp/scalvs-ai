@@ -434,3 +434,4 @@ details.small ul, details.small p { margin: 8px 0 0; }
   .topbar { padding-left: env(titlebar-area-x, 0); padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)); -webkit-app-region: drag; }
   .topbar button, .topbar a { -webkit-app-region: no-drag; }
 }
+.row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: none; }

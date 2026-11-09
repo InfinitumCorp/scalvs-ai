@@ -48,12 +48,12 @@ export const CATALOG = [
   { id: 'cfdocs', name: 'Cloudflare Docs', group: 'Directory', kind: 'mcp', url: 'https://docs.mcp.cloudflare.com/mcp', auth: 'none', desc: 'Search Cloudflare documentation.' },
 
   // ---- Infinitum Nexus: products on the same platform ----
-  { id: 'cumulus', name: 'Cumulus://Cloud', group: 'Infinitum Nexus', kind: 'builtin', desc: 'Agent runtime, storage and data licensing.' },
-  { id: 'cndctr', name: '/CNDCTR/', group: 'Infinitum Nexus', kind: 'builtin', desc: 'Coordinate agents into verified workflows.' },
-  { id: 'spectre', name: '+SPCTR', group: 'Infinitum Nexus', kind: 'builtin', desc: 'The AI sales team and account memory.' },
-  { id: 'veil', name: 'VEIL</>', group: 'Infinitum Nexus', kind: 'builtin', desc: 'Browser sidebar assistant.' },
-  { id: 'metatron', name: 'METATRON¹⁰⁰', group: 'Infinitum Nexus', kind: 'builtin', desc: 'Research and prediction engine.' },
-  { id: 'firm', name: 'FIRM Wallet', group: 'Infinitum Nexus', kind: 'builtin', desc: 'Holds $SCLV rewards (simulated here).' },
+  { id: 'cumulus', name: 'Cumulus://Cloud', group: 'Infinitum Nexus', kind: 'builtin', url: 'https://cumuluscloud.app/', desc: 'Agent runtime, storage and data licensing.' },
+  { id: 'cndctr', name: ':\\ARCHITECT\\', group: 'Infinitum Nexus', kind: 'builtin', url: 'https://rchtch.app/', desc: 'Coordinate agents into verified workflows.' },
+  { id: 'spectre', name: '+SPCTR', group: 'Infinitum Nexus', kind: 'builtin', url: 'https://infinitumcorporation.ai/products/spectre', desc: 'The AI sales team and account memory.' },
+  { id: 'veil', name: 'VEIL</>', group: 'Infinitum Nexus', kind: 'builtin', url: 'https://infinitumcorporation.ai/products/veil', desc: 'Browser sidebar assistant.' },
+  { id: 'metatron', name: 'METATRON¹⁰⁰', group: 'Infinitum Nexus', kind: 'builtin', url: 'https://mttrn.app/', desc: 'Research and prediction engine.' },
+  { id: 'firm', name: 'FIRM Wallet', group: 'Infinitum Nexus', kind: 'builtin', url: 'https://infinitumcorporation.ai/products/firm', desc: 'Holds $SCLV rewards (simulated here).' },
 ];
 
 export const findConnector = (id) => CATALOG.find((c) => c.id === id);
