@@ -25,7 +25,12 @@
   // provisions the namespace on first deploy. Secrets: CONNECT_SECRET (required),
   // and per OAuth app GOOGLE_, MICROSOFT_, SLACK_, GITHUB_ + CLIENT_ID / CLIENT_SECRET.
   // Each app's redirect URI is https://scalvs.app/api/oauth/callback.
-  "kv_namespaces": [{ "binding": "CONNECT" }],
+  "kv_namespaces": [{ "binding": "CONNECT", "id": "20685a2fcc18403db18e5bed4e5e96bd" }],
+  // DeepSearch (api/grok.js): optional secret BRAVE_SEARCH_API_KEY for better web results.
+  // Browser control (api/_browser.js): headless Chrome via Browser Rendering.
+  "browser": { "binding": "BROWSER", "remote": true },
+  // Automations (api/automations.js): run due scheduled tasks every 15 minutes.
+  "triggers": { "crons": ["*/15 * * * *"] },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

@@ -395,3 +395,35 @@ details.small ul, details.small p { margin: 8px 0 0; }
   .conn-search { max-width: none; }
   .grid2 { grid-template-columns: 1fr; }
 }
+
+/* ---------- Grok-style composer extras, media, automations ---------- */
+.composer-bar { flex-wrap: wrap; row-gap: 8px; }
+.composer-bar .pill-select { max-width: 9.5rem; }
+.icon-btn { width: 34px; height: 34px; display: inline-grid; place-items: center; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.icon-btn:hover { background: var(--soft); color: var(--ink); }
+.icon-btn.on { border-color: var(--ink); color: var(--ink); background: var(--soft); }
+.icon-btn:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.attach-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.attach-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 4px 3px 8px; background: var(--soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip img { width: 22px; height: 22px; object-fit: cover; }
+.attach-chip button { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 0 4px; }
+.mode-tag { display: inline-block; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; padding: 0 5px; margin-right: 4px; opacity: .75; }
+.thinking { margin: 6px 0 10px; border-left: 2px solid var(--line); padding-left: 10px; }
+.thinking summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.thinking .prose { color: var(--muted); max-height: 360px; overflow: auto; }
+.gen-image { margin: 8px 0; }
+.gen-image img { display: block; max-width: min(100%, 512px); height: auto; }
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+.shots figure { margin: 0; }
+.shots img, .auto-run .shot { width: 100%; height: auto; border: 1px solid var(--line); display: block; }
+.auto-run .shot { max-width: 480px; margin-top: 8px; }
+.auto-card { margin-top: 14px; }
+.auto-card h3 { margin: 0 0 4px; font-size: 16px; }
+.auto-results { margin-top: 12px; display: grid; gap: 12px; }
+.auto-run { border-top: 1px solid var(--line); padding-top: 10px; }
+#auto-form label { display: grid; gap: 4px; font-size: 13px; }
+#auto-form .row label select { width: auto; }
+@media (max-width: 640px) {
+  .composer-bar .pill-select { max-width: 7.5rem; font-size: 12.5px; }
+  .shots { grid-template-columns: 1fr; }
+}

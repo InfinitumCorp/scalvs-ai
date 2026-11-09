@@ -7,9 +7,11 @@ import * as studio from './views/studio.js';
 import * as connect from './views/connect.js';
 import * as earnings from './views/earnings.js';
 import * as forecast from './views/forecast.js';
+import * as automations from './views/automations.js';
+import * as shared from './views/shared.js';
 import { checkForecastLive, resumeForecasts } from './forecaster.js';
 
-const ROUTES = { command, studio, connect, forecast, earnings };
+const ROUTES = { command, studio, connect, forecast, earnings, automations, shared };
 const main = document.getElementById('main');
 let current = null;
 let root = null;

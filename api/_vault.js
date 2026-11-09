@@ -36,7 +36,7 @@ const memoryKv = {
   async put(k, value, opts = {}) { memory.set(k, { value, exp: opts.expirationTtl ? Date.now() + opts.expirationTtl * 1000 : 0 }); },
   async delete(k) { memory.delete(k); },
 };
-const kv = (env) => env?.CONNECT || memoryKv;
+export const kv = (env) => env?.CONNECT || memoryKv;
 
 let devKey;
 async function key(env) {
