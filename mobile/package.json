@@ -1,0 +1,27 @@
+{
+  "name": "scalvs-mobile",
+  "version": "1.0.0",
+  "description": "SCALVS.ai phone app for Android and iOS (Capacitor shell around https://scalvs.app)",
+  "author": "Infinitum Corporation <info@theinfinitumcorporation.com>",
+  "homepage": "https://scalvs.app",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "assets": "node scripts/make-assets.mjs && capacitor-assets generate --android --ios --iconBackgroundColor #ffffff --iconBackgroundColorDark #ffffff --splashBackgroundColor #ffffff --splashBackgroundColorDark #ffffff",
+    "sync": "cap sync",
+    "android:debug": "cap sync android && cd android && gradlew assembleDebug",
+    "android:release": "cap sync android && cd android && gradlew bundleRelease assembleRelease",
+    "android:open": "cap open android",
+    "ios:open": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/ios": "8.6.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "4.0.0",
+    "@capacitor/cli": "8.6.0"
+  }
+}
