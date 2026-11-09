@@ -9,7 +9,7 @@
   <!-- UI follows /DESIGN.md: clean white, Helvetica Neue, text wordmarks with ™ -->
   <link rel="icon" href="public/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="src/styles.css">
-</head>
+<style id="cid-style">.cid-slot{display:inline-flex;align-items:center;margin-left:auto}.cid-fixed{position:fixed;top:12px;right:12px;z-index:1000;background:#fff;color:#111820;padding:4px}.cid-side{margin:0 0 10px;font-size:13px}.cid-side .cid-who{max-width:150px}@media (max-width:720px){.cid-slot .cid-who{display:none}}</style></head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
@@ -44,6 +44,7 @@
       <ul id="recent-list" class="recent-list"></ul>
     </div>
     <div class="sidebar-foot">
+      <div class="cid-side" data-cumulus-id data-label="Sign in with Cumulus://ID"></div>
       <a class="account" href="#/earnings">
         <span class="avatar" aria-hidden="true">IN</span>
         <span><span class="small">Infinitum</span><br><span class="muted tiny" id="plan-label">Free plan</span></span>
@@ -58,10 +59,11 @@
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
       <a class="brand-sm" href="#/command" aria-label="SCALVS.ai home"><span class="wordmark">SCALVS.ai<sup class="tm">™</sup></span></a>
-    </header>
+    <span class="cid-slot" data-cumulus-id data-label="Sign in"></span></header>
     <main id="main" tabindex="-1"></main>
   </div>
 
   <script type="module" src="src/app.js"></script>
+<script src="/public/cumulus-id.js" data-client="scalvs" defer></script>
 </body>
 </html>
