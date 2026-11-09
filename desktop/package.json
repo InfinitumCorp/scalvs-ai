@@ -1,0 +1,32 @@
+{
+  "name": "scalvs-desktop",
+  "productName": "SCALVS.ai",
+  "version": "1.0.0",
+  "description": "SCALVS.ai desktop app for Windows, macOS and Linux (Chromebook)",
+  "author": "Infinitum Corporation <info@theinfinitumcorporation.com>",
+  "homepage": "https://scalvs.app",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --universal",
+    "dist:linux": "electron-builder --linux --x64 --arm64"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "app.scalvs.desktop",
+    "productName": "SCALVS.ai",
+    "copyright": "© Infinitum Corporation",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "offline.html", "build/icon.png"],
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.png", "signAndEditExecutable": false, "artifactName": "SCALVS.ai-Setup-${version}.${ext}" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "SCALVS.ai" },
+    "mac": { "target": [{ "target": "dmg", "arch": ["universal"] }], "icon": "build/icon.png", "category": "public.app-category.productivity", "artifactName": "SCALVS.ai-${version}-mac.${ext}" },
+    "linux": { "target": ["AppImage", "deb"], "icon": "build/icon.png", "category": "Office", "maintainer": "Infinitum Corporation", "artifactName": "SCALVS.ai-${version}-${arch}.${ext}" }
+  }
+}

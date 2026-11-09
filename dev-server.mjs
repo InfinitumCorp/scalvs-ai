@@ -8,8 +8,11 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as runApi from './api/run.js';
 import * as forecastApi from './api/forecast.js';
+import * as connectorsApi from './api/connectors.js';
+import * as automationsApi from './api/automations.js';
+import { imagine, share } from './api/grok.js';
 
-const APIS = { '/api/run': runApi, '/api/forecast': forecastApi };
+const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share } };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -21,7 +24,9 @@ const TYPES = {
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    const api = APIS[url.pathname];
+    const isConnectors = url.pathname.startsWith('/api/connectors') || url.pathname === '/api/oauth/callback';
+    const isAutomations = url.pathname.startsWith('/api/automations');
+    const api = isConnectors ? { [req.method]: connectorsApi.handle } : isAutomations ? { [req.method]: automationsApi.handle } : APIS[url.pathname];
     if (api) {
       const handler = api[req.method];
       if (!handler) { res.writeHead(405).end(); return; }
@@ -31,7 +36,10 @@ createServer(async (req, res) => {
       res.on('close', () => abort.abort());
       const request = new Request(url, { method: req.method, headers: req.headers, signal: abort.signal, body: chunks.length ? Buffer.concat(chunks) : undefined });
       const response = await handler(request);
-      res.writeHead(response.status, Object.fromEntries(response.headers));
+      const outHeaders = Object.fromEntries(response.headers);
+      const cookies = response.headers.getSetCookie?.() || [];
+      if (cookies.length) outHeaders['set-cookie'] = cookies;
+      res.writeHead(response.status, outHeaders);
       if (!response.body) { res.end(); return; }
       const reader = response.body.getReader();
       try {

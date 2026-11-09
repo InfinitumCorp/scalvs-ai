@@ -1,0 +1,64 @@
+# Builds the SCALVS.ai desktop app (desktop/) for Windows, macOS and Linux
+# (Linux .deb/AppImage also installs on Chromebooks with Linux turned on).
+# Runs when a tag like desktop-v1.0.0 is pushed, or by hand from the Actions tab.
+# Tagged builds attach the installers to a GitHub Release.
+name: Desktop apps
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: dist:win
+          - os: macos-latest
+            target: dist:mac
+          - os: ubuntu-latest
+            target: dist:linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # Unsigned builds. Add CSC_LINK / CSC_KEY_PASSWORD (and Apple notarization
+      # secrets) to sign; without them macOS asks users to right-click → Open once.
+      - run: npm run ${{ matrix.target }} -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scalvs-desktop-${{ matrix.os }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          name: SCALVS.ai desktop ${{ github.ref_name }}

@@ -1,0 +1,18 @@
+{
+  "appId": "app.scalvs",
+  "appName": "SCALVS.ai",
+  "webDir": "www",
+  "server": {
+    "url": "https://scalvs.app/#/command",
+    "errorPath": "offline.html",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}
