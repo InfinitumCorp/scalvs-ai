@@ -51,7 +51,7 @@ function message(r, st, i) {
   <div class="msg agent ${esc(st.status)}">
     <div class="who">${esc(st.name)}${label ? ` <span class="muted">· ${esc(label)}</span>` : ''}${st.mode === 'demo' ? ' <span class="muted">· demo</span>' : ''}</div>
     ${busy && !st.output ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
-    ${st.output ? `<div class="prose${busy ? ' streaming' : ''}" ${busy ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
+    ${st.output ? `<div translate="no" class="prose${busy ? ' streaming' : ''}" ${busy ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
     ${tools}
   </div>`;
 }
@@ -59,7 +59,7 @@ function message(r, st, i) {
 function thread(r) {
   return `
   <div class="thread">
-    <div class="msg user"><div class="bubble">${esc(r.task)}</div></div>
+    <div class="msg user"><div class="bubble" translate="no">${esc(r.task)}</div></div>
     ${r.steps.map((st, i) => (st.status === 'queued' ? `<div class="msg agent queued"><div class="who">${esc(st.name)} <span class="muted">· Up next</span></div></div>` : message(r, st, i))).join('')}
     ${r.error ? `<p class="error small">${esc(r.error)}</p>` : ''}
     ${r.status === 'awaiting_approval' ? `

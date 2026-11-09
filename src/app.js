@@ -1,3 +1,4 @@
+import './i18n/index.js';
 import { getState, update, subscribe, plan } from './store.js';
 import { esc } from './ui.js';
 import { checkLive, recoverInterrupted, clearFinished } from './runner.js';
@@ -63,7 +64,7 @@ function renderNav() {
     const flag = STATUS_DOT[r.status];
     const on = r.id === runId && current === 'command';
     return `<li><a href="#/command?run=${r.id}" class="${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''} title="${esc(r.task)}">
-      <span class="recent-title">${esc(r.task)}</span>${flag ? `<span class="dot-badge ${r.status}" role="img" aria-label="${flag}"></span>` : ''}</a></li>`;
+      <span class="recent-title" translate="no">${esc(r.task)}</span>${flag ? `<span class="dot-badge ${r.status}" role="img" aria-label="${flag}"></span>` : ''}</a></li>`;
   }).join('') || '<li class="muted tiny recent-empty">Your tasks will appear here.</li>';
 
   document.getElementById('clear-recent').hidden = !s.runs.some((r) => !['running', 'awaiting_approval'].includes(r.status));

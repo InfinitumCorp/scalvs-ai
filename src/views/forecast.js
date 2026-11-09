@@ -47,12 +47,12 @@ function card(f, index) {
       ${j.report ? `
       <div class="fc-report">
         <div class="row between"><h3>Forecast report</h3><button class="btn ghost sm" data-action="copy" data-id="${f.id}">Copy report</button></div>
-        <div class="prose">${md(j.report)}</div>
+        <div class="prose" translate="no">${md(j.report)}</div>
       </div>` : ''}
       ${j.status === 'completed' ? `
       <div class="fc-chat">
         <h3>Ask the ReportAgent</h3>
-        ${f.chat.map((m) => `<div class="fc-msg ${m.role}">${m.role === 'user' ? esc(m.content) : `<div class="prose">${md(m.content)}</div>`}</div>`).join('')}
+        ${f.chat.map((m) => `<div class="fc-msg ${m.role}" translate="no">${m.role === 'user' ? esc(m.content) : `<div class="prose">${md(m.content)}</div>`}</div>`).join('')}
         ${f.asking ? '<div class="typing" aria-label="ReportAgent is answering"><span></span><span></span><span></span></div>' : ''}
         <form class="row gap inline-form" data-form="chat" data-id="${f.id}">
           <input name="chat-${f.id}" maxlength="2000" value="${esc(chatDrafts[f.id] || '')}" placeholder="Why did sentiment turn? Which group drove it?" aria-label="Question for the ReportAgent" ${f.asking ? 'disabled' : ''}>
