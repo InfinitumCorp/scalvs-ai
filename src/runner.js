@@ -93,6 +93,24 @@ export async function readStream(res, onText = () => {}, onExtra = () => {}) {
   return full;
 }
 
+// The /api/run request body. geoRouting is sent only when the visitor turned it on.
+export function agentPayload(agent, task, previous, geoRouting = false, opts = {}) {
+  return {
+    agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
+    context: vaultFor(agent),
+    task,
+    previous,
+    stream: true,
+    mode: opts.mode,
+    personality: opts.personality,
+    images: opts.images,
+    files: opts.files,
+    plugins: enabledPlugins(),
+    history: opts.history,
+    ...(geoRouting === true ? { geoRouting: true } : {}),
+  };
+}
+
 async function callAgent(agent, task, previous, { signal, onText = () => {}, opts = {} } = {}) {
   const extra = { shots: [] };
   const onExtra = (evt) => {
@@ -112,19 +130,7 @@ async function callAgent(agent, task, previous, { signal, onText = () => {}, opt
       method: 'POST',
       signal,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
-        context: vaultFor(agent),
-        task,
-        previous,
-        stream: true,
-        mode: opts.mode,
-        personality: opts.personality,
-        images: opts.images,
-        files: opts.files,
-        plugins: enabledPlugins(),
-        history: opts.history,
-      }),
+      body: JSON.stringify(agentPayload(agent, task, previous, getState().geoRouting === true, opts)),
     });
     if (res.status === 503) {
       liveStatus = false;

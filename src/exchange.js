@@ -14,6 +14,8 @@
 //   - Categories on the never-sold list do not exist in the exchange at all.
 //   - Products outside EXCHANGE_PRODUCTS never contribute data.
 
+import { applyGeoPolicy } from './geo.js';
+
 export const BUYERS = [
   { id: 'ads', name: 'Ad platforms', desc: 'Audience segments for ad targeting and measurement.', rate: 1.0 },
   { id: 'brokers', name: 'Data brokers', desc: 'Pooled segments resold to marketers.', rate: 0.8 },
@@ -78,7 +80,7 @@ export function withdrawAll(ex) {
 
 // Credits points for activity in contributing products, once per item and
 // milestone, so pruning old runs never takes points away.
-export function collect(state, ex) {
+export function collect(state, ex, options) {
   ex.points ??= {};
   ex.seen ??= [];
   const seen = new Set(ex.seen);
@@ -98,6 +100,7 @@ export function collect(state, ex) {
     if (it.done) credit(it.id, 'done', () => add('interests', 2));
   }
   if (items.length) credit('account', 'region', () => add('region', 1));
+  if (options?.geoEnabled === true) applyGeoPolicy(ex, options.geo, true);
   ex.seen = [...seen].slice(-500);
   return ex.points;
 }

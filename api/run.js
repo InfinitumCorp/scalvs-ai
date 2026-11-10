@@ -14,6 +14,8 @@ import { agentTools } from './connectors.js';
 import { THINK_MODEL, VISION_MODEL, cleanImages, deepSearch, sourcesBlock, sourcesFooter, splitThinking } from './grok.js';
 import { browserTool, hasBrowser } from './_browser.js';
 import { pluginTools } from './plugins.js';
+import { annotateRequest, withGeo } from './geo.js';
+import { geoEnabled } from '../src/geo.js';
 
 export const PERSONALITIES = {
   concise: 'Be extremely brief. Bullet points, no filler.',
@@ -122,7 +124,16 @@ export function buildSystemPrompt(agent = {}, context = [], liveTools = []) {
   ].filter(Boolean).join('\n\n');
 }
 
+// Opt-in geo routing (INFINITUM_GEO_ENABLED and body.geoRouting): adds a coarse
+// x-infinitum-geo note to the response. With it off, POST is runTask unchanged.
 export async function POST(request, env) {
+  if (!geoEnabled(env) && !geoEnabled(process.env)) return runTask(request, env);
+  const body = await request.clone().json().catch(() => null);
+  const geo = await annotateRequest(request, body, geoEnabled(env) ? env : process.env);
+  return withGeo(await runTask(request, env), geo);
+}
+
+async function runTask(request, env) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key && !hasWorkersAi(env)) return json({ mode: 'demo', error: 'No model is configured' }, 503);
 

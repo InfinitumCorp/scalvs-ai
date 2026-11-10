@@ -32,6 +32,7 @@ function seed() {
     runs: [],
     forecasts: [],
     connections: { cumulus: true, cndctr: true, firm: true },
+    geoRouting: false,
     vault: [
       { id: uid('mem'), text: 'Organization: Infinitum Corporation, Washington, D.C.', products: ['SCALVS.ai', '+SPCTR', 'VEIL</>'] },
       { id: uid('mem'), text: 'Audience: business and government decision-makers.', products: ['SCALVS.ai'] },
@@ -74,6 +75,7 @@ export const getState = () => {
     state.wallet.creditsUsed = 0;
     persist();
   }
+  if (state.geoRouting !== true) state.geoRouting = false;
   return state;
 };
 

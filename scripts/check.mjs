@@ -3,7 +3,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const files = ['dev-server.mjs',
+const files = ['dev-server.mjs', 'scripts/fetch-geo.mjs',
   'worker.js', ...readdirSync('api').filter(f => f.endsWith('.js')).map(f => join('api', f)),
   ...readdirSync('src').filter(f => f.endsWith('.js')).map(f => join('src', f)),
   ...readdirSync('src/views').filter(f => f.endsWith('.js')).map(f => join('src/views', f))];

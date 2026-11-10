@@ -11,11 +11,24 @@ import * as forecastApi from './api/forecast.js';
 import * as connectorsApi from './api/connectors.js';
 import * as automationsApi from './api/automations.js';
 import { imagine, share } from './api/grok.js';
+import { applyGeoArgs, GEO_HELP } from './api/geo-settings.js';
 
 const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share } };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
+
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  console.log(GEO_HELP);
+  process.exit(0);
+}
+let geoOn = false;
+try {
+  geoOn = applyGeoArgs(process.argv.slice(2), process.env, ROOT);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png',
@@ -62,4 +75,7 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');
   }
-}).listen(PORT, () => console.log(`SCALVS.ai dev server → http://localhost:${PORT}`));
+}).listen(PORT, () => {
+  console.log(`SCALVS.ai dev server → http://localhost:${PORT}`);
+  console.log(`Geo routing: ${geoOn ? 'on' : 'off'}`);
+});

@@ -214,6 +214,14 @@ export function render() {
       <input name="text" required maxlength="400" placeholder="Add something agents should remember…" aria-label="New memory">
       <button class="btn primary" type="submit">Add</button>
     </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Options</h2></div>
+    <div class="row gap">
+      <label class="switch"><input type="checkbox" data-action="geo-routing"${s.geoRouting ? ' checked' : ''}><span></span> Geo routing</label>
+    </div>
+    <p class="small muted">Off until you turn it on. Coarse country and site category only. Precise location is never used.</p>
   </section>`;
 }
 
@@ -242,6 +250,12 @@ async function connect(id, token) {
 function setConnection(id, connection) { remote.connections[id] = connection; rerender(); }
 
 export function bind(root, rerenderView) {
+  root.addEventListener('change', (e) => {
+    if (e.target.dataset?.action === 'geo-routing') {
+      const on = e.target.checked === true;
+      update((st) => { st.geoRouting = on; });
+    }
+  });
   root.addEventListener('change', (e) => {
     const id = e.target.dataset?.plugin;
     if (!id) return;
