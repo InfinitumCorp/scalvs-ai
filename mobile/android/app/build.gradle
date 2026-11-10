@@ -10,6 +10,9 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Ads stay off until ADS_ENABLED is flipped to true.
+        buildConfigField "boolean", "ADS_ENABLED", "false"
+        buildConfigField "String", "ADMOB_BANNER_ID", "\"ca-app-pub-3940256099942544/6300978111\""
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -18,6 +21,9 @@ android {
     }
     // Release signing comes from environment variables (see .github/workflows/mobile.yml
     // and mobile/README.md), so the keystore and its passwords never enter the repository.
+    buildFeatures {
+        buildConfig = true
+    }
     signingConfigs {
         release {
             if (System.getenv('SCALVS_KEYSTORE_FILE')) {
@@ -29,12 +35,19 @@ android {
         }
     }
     buildTypes {
+        debug {
+            buildConfigField "boolean", "ADS_ENABLED", "false"
+            buildConfigField "String", "ADMOB_BANNER_ID", "\"ca-app-pub-3940256099942544/6300978111\""
+        }
         release {
             if (System.getenv('SCALVS_KEYSTORE_FILE')) {
                 signingConfig signingConfigs.release
             }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Flip ADS_ENABLED to true to serve the real banner in release. Off until then.
+            buildConfigField "boolean", "ADS_ENABLED", "false"
+            buildConfigField "String", "ADMOB_BANNER_ID", "\"ca-app-pub-7308175971826620/3564925547\""
         }
     }
 }
