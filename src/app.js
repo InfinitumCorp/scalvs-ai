@@ -1,15 +1,19 @@
 import './i18n/index.js';
 import { getState, update, subscribe, plan } from './store.js';
-import { esc } from './ui.js';
+import { esc, toast } from './ui.js';
+import { readReturn, syncPlan } from './billing.js';
 import { checkLive, recoverInterrupted, clearFinished } from './runner.js';
 import * as command from './views/command.js';
 import * as studio from './views/studio.js';
 import * as connect from './views/connect.js';
 import * as earnings from './views/earnings.js';
 import * as forecast from './views/forecast.js';
+import * as automations from './views/automations.js';
+import * as shared from './views/shared.js';
 import { checkForecastLive, resumeForecasts } from './forecaster.js';
+import './firm/firm-suite.js'; // FIRM Suite embed (<firm-suite>), canonical copy from infinitum-nexus
 
-const ROUTES = { command, studio, connect, forecast, earnings };
+const ROUTES = { command, studio, connect, forecast, earnings, automations, shared };
 const main = document.getElementById('main');
 let current = null;
 let root = null;
@@ -97,7 +101,55 @@ document.getElementById('clear-recent').addEventListener('click', () => {
 });
 document.getElementById('scrim').addEventListener('click', () => document.body.classList.remove('nav-open'));
 
+// Back from Stripe Checkout or the billing portal (?billing=success|cancelled): open Plans and say what happened.
+const billingReturn = readReturn(location.search);
+if (billingReturn || location.search.includes('session_id=')) {
+  history.replaceState(null, '', `${location.pathname}#/earnings`);
+  if (billingReturn === 'success') toast('Payment complete. Your plan will update in a moment.');
+  else if (billingReturn === 'cancelled') toast('Checkout cancelled. No charge was made.');
+}
+
+// The paid plan comes from the revenue API, not from this browser.
+async function refreshPlan(attempts = 1) {
+  const { billing } = getState();
+  if (!billing?.apiKey) return;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const next = await syncPlan({ billing });
+      if (next !== getState().plan) update((st) => { st.plan = next; if (next !== 'free') st.wallet.adsOptIn = false; });
+      if (next !== 'free' || i === attempts - 1) return;
+    } catch { return; /* offline or API down: keep the last known plan */ }
+    await new Promise((r) => setTimeout(r, 2000)); // the Stripe webhook may land a moment after the redirect
+  }
+}
+
 navigate();
+refreshPlan(billingReturn === 'success' ? 5 : 1);
 recoverInterrupted();
 checkLive().then(() => renderView());
 checkForecastLive().then(() => { resumeForecasts(); renderView(); });
+
+// ---------- Installable app (Chromebook, Windows, Mac): service worker + install button ----------
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('/sw.js').catch(() => { /* app still works without it */ });
+}
+let installPrompt = null;
+const installBtn = document.getElementById('install-btn');
+const standalone = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  if (installBtn && !standalone()) installBtn.hidden = false;
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  if (installBtn) installBtn.hidden = true;
+  toast('SCALVS.ai is installed. Open it from your apps.');
+});
+installBtn?.addEventListener('click', async () => {
+  if (!installPrompt) { toast('Use your browser menu: Install SCALVS.ai'); return; }
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
+  if (outcome === 'accepted') installBtn.hidden = true;
+  installPrompt = null;
+});

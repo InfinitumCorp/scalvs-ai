@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SCALVS.ai — offline</title>
+<style>body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;color:#111820;background:#fff}main{text-align:center;max-width:360px;padding:16px}button{font:inherit;border:1px solid #111820;background:#fff;color:#111820;padding:12px 20px;cursor:pointer}</style></head>
+<body><main><h1>You're offline</h1><p>SCALVS.ai needs an internet connection. Check your connection, then try again.</p><button id="r">Try again</button></main>
+<script>
+var go = function () { location.href = 'https://scalvs.app/#/command'; };
+document.getElementById('r').onclick = go;
+window.addEventListener('online', go);
+setTimeout(go, 15000);
+</script></body></html>

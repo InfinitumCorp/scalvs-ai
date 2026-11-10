@@ -21,11 +21,25 @@ export function md(src) {
   let list = null;
   let code = false;
   let codeBuf = [];
-  const inline = (t) => t
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
-    .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,])/g, '$1<em>$2</em>');
+  // Links: [text](https://…) and bare https URLs. Pulled out first so * and _ inside
+  // URLs are not formatted, then restored. Only http(s); they open outside the app
+  // (new tab, or the system browser from an installed app) so phone apps never get
+  // stuck on another site with no way back.
+  const inline = (t) => {
+    const links = [];
+    const a = (href, text) => {
+      links.push(`<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`);
+      return `\u0000${links.length - 1}\u0000`;
+    };
+    return t
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, text, href) => a(href, text))
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?])/g, (_, pre, href) => pre + a(href, href))
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+      .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,])/g, '$1<em>$2</em>')
+      .replace(/\u0000(\d+)\u0000/g, (_, i) => links[Number(i)]);
+  };
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
 
   for (const line of lines) {

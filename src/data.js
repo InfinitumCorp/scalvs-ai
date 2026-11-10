@@ -51,19 +51,8 @@ export const ALL_TOOLS = [
   'Cumulus://Cloud files', 'METATRON¹⁰⁰', '+SPCTR CRM', '/CNDCTR/', 'VEIL</> sidebar', 'FABRIC smart replies',
 ];
 
-export const CONNECTORS = [
-  { id: 'gmail', name: 'Email', group: 'Your world', desc: 'Read threads and draft replies for approval.' },
-  { id: 'slack', name: 'Slack', group: 'Your world', desc: 'Post updates and answer questions in channels.' },
-  { id: 'github', name: 'GitHub', group: 'Your world', desc: 'Open issues, review pull requests, read code.' },
-  { id: 'drive', name: 'Docs & files', group: 'Your world', desc: 'Use documents as source material.' },
-  { id: 'calendar', name: 'Calendar', group: 'Your world', desc: 'Schedule follow-ups and meetings.' },
-  { id: 'cumulus', name: 'Cumulus://Cloud', group: 'Infinitum Nexus', desc: 'Agent runtime, storage and data licensing.' },
-  { id: 'cndctr', name: '/CNDCTR/', group: 'Infinitum Nexus', desc: 'Coordinate agents into verified workflows.' },
-  { id: 'spectre', name: '+SPCTR', group: 'Infinitum Nexus', desc: 'The AI sales team and account memory.' },
-  { id: 'veil', name: 'VEIL</>', group: 'Infinitum Nexus', desc: 'Browser sidebar assistant.' },
-  { id: 'metatron', name: 'METATRON¹⁰⁰', group: 'Infinitum Nexus', desc: 'Research and prediction engine.' },
-  { id: 'firm', name: 'FIRM Wallet', group: 'Infinitum Nexus', desc: 'Holds $SCLV rewards (simulated here).' },
-];
+// Connectors live in src/connectors.js (shared with the Worker).
+
 
 export const DATASETS = [
   { id: 'ds-prompts', name: 'Anonymized workflow templates', size: '1.2k records', price: 40 },
