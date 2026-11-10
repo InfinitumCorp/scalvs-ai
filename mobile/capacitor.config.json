@@ -3,7 +3,7 @@
   "appName": "SCALVS.ai",
   "webDir": "www",
   "server": {
-    "url": "https://scalvs.app/#/command",
+    "allowNavigation": ["scalvs.app", "www.scalvs.app", "scalvs-mirror-325535919239.europe-north1.run.app"],
     "errorPath": "offline.html",
     "cleartext": false
   },

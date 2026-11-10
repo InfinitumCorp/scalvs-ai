@@ -1,4 +1,62 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>SCALVS.ai</title>
-<meta http-equiv="refresh" content="0; url=https://scalvs.app/#/command"></head>
-<body></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SCALVS.ai</title>
+<style>
+  body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;color:#111820;background:#fff}
+  main{text-align:center;max-width:360px;padding:16px}
+  .mark{font-size:28px;letter-spacing:-.5px}.mark sup{font-size:12px}
+  p{color:#5b6570}
+  button{font:inherit;border:1px solid #111820;background:#fff;color:#111820;padding:12px 20px;cursor:pointer}
+  [hidden]{display:none}
+</style></head>
+<body><main>
+  <div class="mark">SCALVS.ai<sup>™</sup></div>
+  <p id="status">Connecting…</p>
+  <div id="offline" hidden>
+    <p>Can't reach SCALVS.ai right now. Check your connection, then try again.</p>
+    <button id="retry" type="button">Try again</button>
+  </div>
+</main>
+<script>
+// Some networks (for example in Russia) throttle Cloudflare, where scalvs.app
+// lives. The mirror (Google Cloud Run, see mirror/README.md) serves the same
+// site. Try both and open whichever fully loads a 28 KB file first: throttled
+// connections stall after about 16 KB, so a small probe would pass by mistake.
+var HOSTS = ['https://scalvs.app', 'https://scalvs-mirror-325535919239.europe-north1.run.app'];
+var PROBE = '/public/icons/icon-1024.png';
+var TIMEOUT = 15000;
+
+function probe(base) {
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    var timer = setTimeout(function () { img.src = ''; reject(new Error('timeout')); }, TIMEOUT);
+    img.onload = function () { clearTimeout(timer); resolve(base); };
+    img.onerror = function () { clearTimeout(timer); reject(new Error('error')); };
+    img.src = base + PROBE + '?app=' + Date.now();
+  });
+}
+
+function firstOf(promises) {
+  return new Promise(function (resolve, reject) {
+    var failed = 0;
+    promises.forEach(function (p) {
+      p.then(resolve, function () { if (++failed === promises.length) reject(new Error('all failed')); });
+    });
+  });
+}
+
+function start() {
+  document.getElementById('status').hidden = false;
+  document.getElementById('offline').hidden = true;
+  firstOf(HOSTS.map(probe))
+    .then(function (base) { location.replace(base + '/#/command'); })
+    .catch(function () {
+      document.getElementById('status').hidden = true;
+      document.getElementById('offline').hidden = false;
+    });
+}
+
+document.getElementById('retry').onclick = start;
+window.addEventListener('online', start);
+start();
+</script></body></html>
