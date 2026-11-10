@@ -74,5 +74,20 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>GADIsAdManagerApp</key>
+	<true/>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-7308175971826620~6079583254</string>
+	<key>GADDelayAppMeasurementInit</key>
+	<true/>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>SCALVS.ai uses this identifier only if ads are turned on, to measure ads and show relevant ads.</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 </dict>
 </plist>

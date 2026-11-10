@@ -3,7 +3,11 @@
   "appName": "SCALVS.ai",
   "webDir": "www",
   "server": {
-    "allowNavigation": ["scalvs.app", "www.scalvs.app", "scalvs-mirror-325535919239.europe-north1.run.app"],
+    "allowNavigation": [
+      "scalvs.app",
+      "www.scalvs.app",
+      "scalvs-mirror-325535919239.europe-north1.run.app"
+    ],
     "errorPath": "offline.html",
     "cleartext": false
   },
@@ -14,5 +18,11 @@
   "ios": {
     "contentInset": "automatic",
     "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "AdMob": {
+      "appIdAndroid": "ca-app-pub-7308175971826620~7610167678",
+      "appIdIos": "ca-app-pub-7308175971826620~6079583254"
+    }
   }
 }

@@ -17,6 +17,8 @@
     <button id="retry" type="button">Try again</button>
   </div>
 </main>
+<script src="ads-config.js"></script>
+<script src="ads.js"></script>
 <script>
 // Some networks (for example in Russia) throttle Cloudflare, where scalvs.app
 // lives. The mirror (Google Cloud Run, see mirror/README.md) serves the same
@@ -58,5 +60,19 @@ function start() {
 
 document.getElementById('retry').onclick = start;
 window.addEventListener('online', start);
-start();
+
+// When ads are off (the default) this is just start() — no change to launch.
+// When they are on, give the native banner a short moment to attach before
+// the shell navigates to scalvs.app; the banner itself is outside this HTML.
+function boot() {
+  if (!window.scalvsAdsEnabled || !window.scalvsAdsEnabled()) {
+    start();
+    return;
+  }
+  var done = false;
+  function go() { if (done) return; done = true; start(); }
+  (window.startScalvsAds ? window.startScalvsAds() : Promise.resolve()).then(go, go);
+  setTimeout(go, 2500);
+}
+boot();
 </script></body></html>
