@@ -58,9 +58,9 @@ function message(r, st, i) {
   <div class="msg agent ${esc(st.status)}">
     <div class="who">${esc(st.name)}${label ? ` <span class="muted">· ${esc(label)}</span>` : ''}${st.mode === 'demo' ? ' <span class="muted">· demo</span>' : ''}</div>
     ${busy && !st.output ? '<div class="typing" aria-label="Working"><span></span><span></span><span></span></div>' : ''}
-    ${st.thinking ? `<details class="thinking"><summary>Thought process</summary><div class="prose small">${md(st.thinking)}</div></details>` : ''}
+    ${st.thinking ? `<details class="thinking"><summary>Thought process</summary><div class="prose small" translate="no">${md(st.thinking)}</div></details>` : ''}
     ${media(r, i, st)}
-    ${st.output ? `<div class="prose${busy ? ' streaming' : ''}" ${busy ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
+    ${st.output ? `<div translate="no" class="prose${busy ? ' streaming' : ''}" ${busy ? 'aria-live="polite" aria-busy="true"' : ''}>${md(st.output)}</div>` : ''}
     ${tools}
   </div>`;
 }
@@ -76,7 +76,7 @@ function thread(r) {
   return `
   <div class="thread">
     ${r.private ? '<p class="small muted center">Private chat: not saved after you leave this page, never shared.</p>' : ''}
-    <div class="msg user"><div class="bubble">${r.kind ? `<span class="mode-tag">${esc(MODES.find((x) => x.id === r.kind)?.label || r.kind)}</span> ` : ''}${esc(r.task)}${r.attached?.length ? `<div class="small muted">Attached: ${r.attached.map(esc).join(', ')}</div>` : ''}</div></div>
+    <div class="msg user"><div class="bubble">${r.kind ? `<span class="mode-tag">${esc(MODES.find((x) => x.id === r.kind)?.label || r.kind)}</span> ` : ''}<span translate="no">${esc(r.task)}</span>${r.attached?.length ? `<div class="small muted">Attached: <span translate="no">${r.attached.map(esc).join(', ')}</span></div>` : ''}</div></div>
     ${r.steps.map((st, i) => (st.status === 'queued' ? `<div class="msg agent queued"><div class="who">${esc(st.name)} <span class="muted">· Up next</span></div></div>` : message(r, st, i))).join('')}
     ${r.error ? `<p class="error small">${esc(r.error)}</p>` : ''}
     ${r.status === 'awaiting_approval' ? `
