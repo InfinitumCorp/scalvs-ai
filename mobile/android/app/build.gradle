@@ -55,6 +55,7 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    implementation 'com.amplitude:analytics-android:1.37.1'
 }
 
 apply from: 'capacitor.build.gradle'
