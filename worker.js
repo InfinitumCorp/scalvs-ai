@@ -5,8 +5,11 @@
 // nodejs_compat fills from the Worker's vars and secrets.
 import * as run from './api/run.js';
 import * as forecast from './api/forecast.js';
+import * as connectors from './api/connectors.js';
+import * as automations from './api/automations.js';
+import { imagine, share } from './api/grok.js';
 
-const ROUTES = { '/api/run': run, '/api/forecast': forecast };
+const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share } };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -15,7 +18,11 @@ const SECURITY_HEADERS = {
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
-    const api = ROUTES[pathname.replace(/\/$/, '')];
+    const isConnectors = pathname.startsWith('/api/connectors') || pathname === '/api/oauth/callback';
+    const isAutomations = pathname.startsWith('/api/automations');
+    const api = isConnectors ? { [request.method]: connectors.handle }
+      : isAutomations ? { [request.method]: automations.handle }
+      : ROUTES[pathname.replace(/\/$/, '')];
     if (!api) return env.ASSETS.fetch(request);
     const handler = api[request.method];
     if (!handler) return new Response('Method Not Allowed', { status: 405, headers: SECURITY_HEADERS });
@@ -32,6 +39,11 @@ export default {
     const response = await handler(request, env);
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
+    // redirects (OAuth) keep their Location; Response.redirect headers are immutable, so copy
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  },
+  // Cron (wrangler.jsonc triggers.crons): run due automations.
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(automations.runDue(env));
   },
 };

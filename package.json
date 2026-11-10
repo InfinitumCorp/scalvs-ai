@@ -19,5 +19,8 @@
   },
   "devDependencies": {
     "wrangler": "^4.158.0"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.4.0"
   }
 }

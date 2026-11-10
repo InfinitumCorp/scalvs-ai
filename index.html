@@ -8,8 +8,33 @@
   <meta name="theme-color" content="#ffffff">
   <!-- UI follows /DESIGN.md: clean white, Helvetica Neue, text wordmarks with ™ -->
   <link rel="icon" href="public/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/public/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SCALVS">
   <link rel="stylesheet" href="src/styles.css">
-</head>
+  <!-- Fetch every module at once instead of one import level at a time: on slow or
+       proxied connections the import chain otherwise leaves the page blank for seconds.
+       tests/preload.test.js keeps this list in step with src/. -->
+  <link rel="modulepreload" href="src/app.js">
+  <link rel="modulepreload" href="src/store.js">
+  <link rel="modulepreload" href="src/ui.js">
+  <link rel="modulepreload" href="src/billing.js">
+  <link rel="modulepreload" href="src/runner.js">
+  <link rel="modulepreload" href="src/forecaster.js">
+  <link rel="modulepreload" href="src/data.js">
+  <link rel="modulepreload" href="src/exchange.js">
+  <link rel="modulepreload" href="src/views/command.js">
+  <link rel="modulepreload" href="src/views/studio.js">
+  <link rel="modulepreload" href="src/connectors.js">
+  <link rel="modulepreload" href="src/views/connect.js">
+  <link rel="modulepreload" href="src/views/earnings.js">
+  <link rel="modulepreload" href="src/views/forecast.js">
+  <link rel="modulepreload" href="src/grok.js">
+  <link rel="modulepreload" href="src/views/automations.js">
+  <link rel="modulepreload" href="src/views/shared.js">
+  <link rel="stylesheet" href="src/firm/firm-suite.css">
+<style id="cid-style">.cid-slot{display:inline-flex;align-items:center;margin-left:auto}.cid-fixed{position:fixed;top:12px;right:12px;z-index:1000;background:#fff;color:#111820;padding:4px}.cid-side{margin:0 0 10px;font-size:13px}.cid-side .cid-who{max-width:150px}@media (max-width:720px){.cid-slot .cid-who{display:none}}</style></head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
@@ -30,6 +55,10 @@
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Forecasts <span id="forecast-badge" class="dot-badge" hidden></span>
       </a>
+      <a href="#/automations" data-route="automations">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        Automations
+      </a>
       <a href="#/connect" data-route="connect">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Connect
@@ -44,6 +73,11 @@
       <ul id="recent-list" class="recent-list"></ul>
     </div>
     <div class="sidebar-foot">
+      <div class="cid-side" data-cumulus-id data-label="Sign in with Cumulus://ID"></div>
+      <button type="button" id="install-btn" class="btn sm install-btn" hidden>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Install app
+      </button>
       <a class="account" href="#/earnings">
         <span class="avatar" aria-hidden="true">IN</span>
         <span><span class="small">Infinitum</span><br><span class="muted tiny" id="plan-label">Free plan</span></span>
@@ -58,10 +92,11 @@
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
       <a class="brand-sm" href="#/command" aria-label="SCALVS.ai home"><span class="wordmark">SCALVS.ai<sup class="tm">™</sup></span></a>
-    </header>
-    <main id="main" tabindex="-1"></main>
+    <span class="cid-slot" data-cumulus-id data-label="Sign in"></span></header>
+    <main id="main" tabindex="-1"><p class="muted" style="text-align:center;margin-top:30vh">Loading…</p></main>
   </div>
 
   <script type="module" src="src/app.js"></script>
+<script src="/public/cumulus-id.js" data-client="scalvs" defer></script>
 </body>
 </html>

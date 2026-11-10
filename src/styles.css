@@ -377,3 +377,64 @@ main { padding-bottom: 24px; }
 details.small { margin-top: 12px; }
 details.small summary { cursor: pointer; color: var(--ink); }
 details.small ul, details.small p { margin: 8px 0 0; }
+
+/* ---------- connectors ---------- */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.err-text { color: var(--err); }
+.notice { padding: 10px 0; }
+.conn-search { max-width: 240px; height: 34px; padding: 6px 10px; }
+.conn-actions { flex: none; flex-wrap: nowrap; }
+.conn-manage { border-left: 2px solid var(--line); padding: 4px 0 12px 16px; margin: 0 0 12px 4px; display: grid; gap: 12px; }
+.tools-list .list-row { padding: 8px 0; }
+.token-row { padding: 0 0 12px; }
+.tool-out { max-height: 320px; overflow: auto; background: var(--soft); padding: 12px; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.custom-form { margin-top: 12px; }
+@media (max-width: 640px) {
+  .conn-row { flex-wrap: wrap; }
+  .conn-actions { width: 100%; justify-content: flex-end; }
+  .conn-search { max-width: none; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+
+/* ---------- Grok-style composer extras, media, automations ---------- */
+.composer-bar { flex-wrap: wrap; row-gap: 8px; }
+.composer-bar .pill-select { max-width: 9.5rem; }
+.icon-btn { width: 34px; height: 34px; display: inline-grid; place-items: center; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.icon-btn:hover { background: var(--soft); color: var(--ink); }
+.icon-btn.on { border-color: var(--ink); color: var(--ink); background: var(--soft); }
+.icon-btn:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.attach-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.attach-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 4px 3px 8px; background: var(--soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip img { width: 22px; height: 22px; object-fit: cover; }
+.attach-chip button { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 15px; padding: 0 4px; }
+.mode-tag { display: inline-block; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; padding: 0 5px; margin-right: 4px; opacity: .75; }
+.thinking { margin: 6px 0 10px; border-left: 2px solid var(--line); padding-left: 10px; }
+.thinking summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.thinking .prose { color: var(--muted); max-height: 360px; overflow: auto; }
+.gen-image { margin: 8px 0; }
+.gen-image img { display: block; max-width: min(100%, 512px); height: auto; }
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+.shots figure { margin: 0; }
+.shots img, .auto-run .shot { width: 100%; height: auto; border: 1px solid var(--line); display: block; }
+.auto-run .shot { max-width: 480px; margin-top: 8px; }
+.auto-card { margin-top: 14px; }
+.auto-card h3 { margin: 0 0 4px; font-size: 16px; }
+.auto-results { margin-top: 12px; display: grid; gap: 12px; }
+.auto-run { border-top: 1px solid var(--line); padding-top: 10px; }
+#auto-form label { display: grid; gap: 4px; font-size: 13px; }
+#auto-form .row label select { width: auto; }
+@media (max-width: 640px) {
+  .composer-bar .pill-select { max-width: 7.5rem; font-size: 12.5px; }
+  .shots { grid-template-columns: 1fr; }
+}
+.install-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-bottom: 10px; }
+.install-btn[hidden] { display: none; }
+/* Installed app with a custom title bar (window-controls-overlay): keep the top bar clear of the OS buttons. */
+@media (display-mode: window-controls-overlay) {
+  .topbar { padding-left: env(titlebar-area-x, 0); padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)); -webkit-app-region: drag; }
+  .topbar button, .topbar a { -webkit-app-region: no-drag; }
+}
+.row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: none; }
+
+/* FIRM Suite block on Earnings (styles live in src/firm/firm-suite.css) */
+firm-suite.firm { margin: 0 0 20px; }

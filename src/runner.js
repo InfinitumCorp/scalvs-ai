@@ -4,10 +4,16 @@
 
 import { getState, update, uid, plan } from './store.js';
 import { REWARD_RULES, TEMPLATES } from './data.js';
+import { enabledPlugins } from './grok.js';
 
 let liveStatus = null; // null = unknown, true = live model, false = demo
 const API_URL = 'api/run'; // relative, so the app also works from a subfolder
 const controllers = new Map(); // runId -> AbortController for the active step
+// Attachments, screenshots and generated images are large: kept in memory for
+// this tab only (never written to localStorage). Keyed by run id / step key.
+const runOpts = new Map();
+const media = new Map();
+export const mediaFor = (runId, i) => media.get(`${runId}:${i}`) || {};
 
 export async function checkLive() {
   try {
@@ -60,7 +66,7 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 
 // Reads the server's SSE stream, calling onText with the text so far.
 // Succeeds only on an explicit "done" event; anything else is a failure.
-export async function readStream(res, onText = () => {}) {
+export async function readStream(res, onText = () => {}, onExtra = () => {}) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -78,6 +84,7 @@ export async function readStream(res, onText = () => {}) {
       let evt;
       try { evt = JSON.parse(line.slice(5).trim()); } catch { continue; }
       if (evt.type === 'text' && typeof evt.text === 'string') { full += evt.text; onText(full); }
+      else if (evt.type === 'thinking' || evt.type === 'shot' || evt.type === 'sources') onExtra(evt);
       else if (evt.type === 'error') { reader.cancel().catch(() => {}); throw new Error(evt.error || 'The model stream failed. Please retry.'); }
       else if (evt.type === 'done') finished = true;
     }
@@ -86,24 +93,44 @@ export async function readStream(res, onText = () => {}) {
   return full;
 }
 
-export function agentPayload(agent, task, previous, geoRouting = false) {
+// The /api/run request body. geoRouting is sent only when the visitor turned it on.
+export function agentPayload(agent, task, previous, geoRouting = false, opts = {}) {
   return {
     agent: { name: agent.name, role: agent.role, instructions: agent.instructions, tools: agent.tools },
     context: vaultFor(agent),
     task,
     previous,
     stream: true,
+    mode: opts.mode,
+    personality: opts.personality,
+    images: opts.images,
+    files: opts.files,
+    plugins: enabledPlugins(),
+    history: opts.history,
     ...(geoRouting === true ? { geoRouting: true } : {}),
   };
 }
 
-async function callAgent(agent, task, previous, { signal, onText = () => {} } = {}) {
+async function callAgent(agent, task, previous, { signal, onText = () => {}, opts = {} } = {}) {
+  const extra = { shots: [] };
+  const onExtra = (evt) => {
+    if (evt.type === 'thinking') extra.thinking = evt.text;
+    else if (evt.type === 'sources') extra.sources = evt.sources;
+    else if (evt.type === 'shot') extra.shots.push({ url: evt.url, title: evt.title, image: evt.image });
+  };
+  if (opts.mode === 'imagine') {
+    const res = await fetch('api/imagine', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: task }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.image) throw new Error(data.error || `Image generation failed (${res.status})`);
+    extra.image = data.image;
+    return { output: `Image for: *${task.slice(0, 200)}*`, mode: 'live', extra };
+  }
   if (liveStatus !== false) {
     const res = await fetch(API_URL, {
       method: 'POST',
       signal,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(agentPayload(agent, task, previous, getState().geoRouting === true)),
+      body: JSON.stringify(agentPayload(agent, task, previous, getState().geoRouting === true, opts)),
     });
     if (res.status === 503) {
       liveStatus = false;
@@ -114,17 +141,20 @@ async function callAgent(agent, task, previous, { signal, onText = () => {} } = 
       }
       let output;
       if ((res.headers.get('content-type') || '').includes('text/event-stream')) {
-        output = await readStream(res, onText);
+        output = await readStream(res, onText, onExtra);
       } else {
         const data = await res.json();
         if (data.mode !== 'live') throw new Error('The model returned no valid output. Please retry.');
         output = data.output;
+        if (data.thinking) extra.thinking = data.thinking;
+        if (data.sources) extra.sources = data.sources;
+        if (data.shots) extra.shots = data.shots;
       }
       if (typeof output !== 'string' || !output.trim()) {
         throw new Error('The model returned no valid output. Please retry.');
       }
       liveStatus = true;
-      return { output, mode: 'live' };
+      return { output, mode: 'live', extra };
     }
   }
   // Demo mode: stream a simulated answer a few words at a time.
@@ -137,7 +167,7 @@ async function callAgent(agent, task, previous, { signal, onText = () => {} } = 
     onText(out);
     await sleep(40, signal);
   }
-  return { output: text, mode: 'demo' };
+  return { output: text, mode: 'demo', extra };
 }
 
 // ---------- run lifecycle ----------
@@ -151,7 +181,22 @@ export function creditUsage() {
   return { used: s.wallet.creditsUsed, reserved, available: Math.max(0, plan().credits - s.wallet.creditsUsed - reserved) };
 }
 
-export function startRun({ task, agentIds, title }) {
+// The conversation a follow-up continues: each earlier run's task and final answer.
+export function chainOf(runId) {
+  const runs = getState().runs;
+  const chain = [];
+  for (let r = runs.find((x) => x.id === runId); r && chain.length < 12; r = runs.find((x) => x.id === r.parentId)) chain.unshift(r);
+  return chain;
+}
+function historyFor(parentId) {
+  if (!parentId) return [];
+  return chainOf(parentId).flatMap((r) => {
+    const answer = [...r.steps].reverse().find((st) => st.output)?.output || '';
+    return [{ role: 'user', content: r.task }, ...(answer ? [{ role: 'assistant', content: answer.slice(0, 4000) }] : [])];
+  });
+}
+
+export function startRun({ task, agentIds, title, opts = {} }) {
   if (typeof task !== 'string' || !task.trim() || task.length > 6000) return { error: 'Enter a task between 1 and 6000 characters.' };
   if (!Array.isArray(agentIds) || !agentIds.length || agentIds.some(id => !findAgent(id))) return { error: 'Choose existing agents for every team step.' };
   task = task.trim();
@@ -169,7 +214,12 @@ export function startRun({ task, agentIds, title }) {
     createdAt: Date.now(),
     current: 0,
     steps: steps.map((a) => ({ agentId: a.id, name: a.name, status: 'queued', output: '', mode: null })),
+    kind: opts.mode && opts.mode !== 'auto' ? opts.mode : undefined,
+    parentId: opts.parentId || undefined,
+    private: opts.private || undefined,
+    attached: [...(opts.images || []).map(() => 'image'), ...(opts.files || []).map((f) => f.name)],
   };
+  runOpts.set(run.id, { ...opts, history: historyFor(opts.parentId) });
   update((st) => {
     st.runs.unshift(run);
     let finished = 0;
@@ -226,13 +276,18 @@ async function advance(runId) {
   const onText = (text) => { pending = text; if (!timer) timer = setTimeout(flush, 80); };
 
   try {
-    const { output, mode } = await callAgent(agent, run.task, previous, { signal: controller.signal, onText });
+    const { output, mode, extra = {} } = await callAgent(agent, run.task, previous, { signal: controller.signal, onText, opts: { ...(runOpts.get(runId) || {}), ...(idx > 0 ? { images: [], files: [] } : {}) } });
+    if (extra.image || extra.shots?.length) media.set(`${runId}:${idx}`, { image: extra.image, shots: extra.shots });
     clearTimeout(timer);
     let next = false;
     mutateRun(runId, (r) => {
       if (!stillRunning(r)) return;
       r.steps[idx].output = output;
       r.steps[idx].mode = mode;
+      if (extra.thinking) r.steps[idx].thinking = extra.thinking.slice(0, 20000);
+      if (extra.sources?.length) r.steps[idx].sources = extra.sources.slice(0, 10);
+      if (extra.image) r.steps[idx].hasImage = true;
+      if (extra.shots?.length) r.steps[idx].shotCount = extra.shots.length;
       if (agent.approval) {
         r.steps[idx].status = 'awaiting_approval';
         r.status = 'awaiting_approval';
@@ -277,6 +332,7 @@ export function stopRun(runId, reason) {
 // Runs persisted as "running" with no live controller were cut off by a page
 // reload. Stop them so they no longer hold credit reservations.
 export function recoverInterrupted() {
+  if (getState().runs.some((r) => r.private)) update((st) => { st.runs = st.runs.filter((r) => !r.private); });
   getState().runs
     .filter(r => r.status === 'running' && !controllers.has(r.id))
     .forEach(r => stopRun(r.id, 'Interrupted when the page was closed or reloaded.'));

@@ -1,0 +1,13 @@
+node_modules/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+android/*.keystore
+android/keystore.properties
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+*.apk
+*.aab

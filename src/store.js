@@ -14,6 +14,8 @@ function seed() {
   const writer = TEMPLATES[1];
   return {
     plan: 'free',
+    // Billing org for real plans (src/billing.js): { orgId, apiKey, email } once created.
+    billing: null,
     agents: [
       {
         id: uid('agt'), name: 'Atlas', template: researcher.id, role: researcher.role,
@@ -89,7 +91,10 @@ export function subscribe(fn) {
 }
 
 export function reset() {
+  // Keep the billing account and paid plan: resetting prototype data must not orphan a subscription.
+  const { billing, plan } = state;
   state = seed();
+  if (billing) Object.assign(state, { billing, plan });
   persist();
   listeners.forEach((fn) => fn(state));
 }
