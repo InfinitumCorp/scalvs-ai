@@ -4,13 +4,26 @@
 // the app still runs live with zero provider keys. No UI changes: this is a
 // drop-in third tier behind Claude and Workers AI, same shapes as _workers-ai.js.
 
+//
+// OpenClaw (https://github.com/openclaw/openclaw, MIT): when OPENCLAW_URL is set,
+// this tier talks to an OpenClaw gateway's OpenAI-compatible endpoint instead and
+// becomes SCALVS.ai's primary engine. OpenClaw runs the agent (its own tools,
+// memory and model routing, including free local models via Ollama); SCALVS sends
+// the agent brief and streams the answer back. See docs/openclaw.md.
+
 import { parseUrls, poolFor, redactMessages } from './_resilience.js';
 
 export const DEFAULT_OPEN_WEIGHTS_MODEL = 'qwen3:8b';
+export const DEFAULT_OPENCLAW_AGENT = 'openclaw/default';
+
+// OpenClaw gateway configured? (OPENCLAW_URL, e.g. http://127.0.0.1:18789/v1)
+export const hasOpenClaw = () => Boolean(process.env.OPENCLAW_URL);
 
 // OPEN_WEIGHTS_URL may list several interchangeable servers, comma-separated;
 // requests fail over down the list (see _resilience.js).
-export const openWeightsUrls = () => parseUrls(process.env.OPEN_WEIGHTS_URL, ['http://localhost:11434/v1']);
+export const openWeightsUrls = () => (hasOpenClaw()
+  ? parseUrls(process.env.OPENCLAW_URL, ['http://127.0.0.1:18789/v1'])
+  : parseUrls(process.env.OPEN_WEIGHTS_URL, ['http://localhost:11434/v1']));
 export const openWeightsBaseUrl = () => openWeightsUrls()[0];
 
 const intEnv = (name, fallback) => {
@@ -35,11 +48,26 @@ export function openWeightsFetch(path, init = {}) {
   const pool = poolFor(openWeightsUrls(), { retries: intEnv('OPEN_WEIGHTS_RETRIES', 2), baseMs: intEnv('OPEN_WEIGHTS_RETRY_BASE_MS', 400) });
   return pool.fetch(path, { ...init, body });
 }
-export const openWeightsModel = () => process.env.OPEN_WEIGHTS_MODEL || DEFAULT_OPEN_WEIGHTS_MODEL;
+// With OpenClaw the "model" is the agent target (openclaw/<agentId>); the provider
+// model behind it is OpenClaw's choice unless OPENCLAW_MODEL overrides it.
+export const openWeightsModel = () => (hasOpenClaw()
+  ? process.env.OPENCLAW_AGENT || DEFAULT_OPENCLAW_AGENT
+  : process.env.OPEN_WEIGHTS_MODEL || DEFAULT_OPEN_WEIGHTS_MODEL);
 
 // A key is never required (Ollama ignores it); set OPEN_WEIGHTS_KEY only for gateways that insist.
-export const hasOpenWeights = () => Boolean(process.env.OPEN_WEIGHTS_URL || process.env.OPEN_WEIGHTS_MODEL);
+export const hasOpenWeights = () => Boolean(hasOpenClaw() || process.env.OPEN_WEIGHTS_URL || process.env.OPEN_WEIGHTS_MODEL);
+// OpenClaw's gateway token (OPENCLAW_TOKEN) is full operator access to that
+// gateway: keep it a Worker secret, never in the repo.
 export const openWeightsHeaders = () => {
+  if (hasOpenClaw()) {
+    const token = process.env.OPENCLAW_TOKEN;
+    const model = process.env.OPENCLAW_MODEL;
+    return {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(model ? { 'x-openclaw-model': model } : {}),
+    };
+  }
   const key = process.env.OPEN_WEIGHTS_KEY;
   return { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) };
 };
