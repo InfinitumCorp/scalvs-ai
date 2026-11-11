@@ -3,7 +3,7 @@
   "appName": "SCALVS.ai",
   "webDir": "www",
   "server": {
-    "allowNavigation": ["scalvs.app", "www.scalvs.app", "scalvs-mirror-325535919239.europe-north1.run.app"],
+    "allowNavigation": ["scalvs.app", "www.scalvs.app", "scalvs-mirror-325535919239.europe-north1.run.app", "id.cumuluscloud.app", "ru.id.cumuluscloud.app"],
     "errorPath": "offline.html",
     "cleartext": false
   },
