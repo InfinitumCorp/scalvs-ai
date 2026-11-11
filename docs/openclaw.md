@@ -76,6 +76,17 @@ OpenClaw adds its own agent prompt (about 13.5k tokens) to every step. On a CPU-
 server with a small model that takes 1-2 minutes per step, so raise
 `OPEN_WEIGHTS_TIMEOUT_MS` (default 120000) there, or give the model a GPU.
 
+## Tested
+
+- **GitHub-hosted runner** (4 vCPU, 16 GB, no GPU), Ollama + `qwen3:0.6b`: plain and
+  streamed agent steps pass (`.github/workflows/openclaw-e2e.yml`). A plain step takes
+  1-4 minutes, almost all of it the model reading OpenClaw's prompt.
+- **Yandex Cloud, Russia** (2 vCPU, 4 GB), 2026-11-12: npm, nodejs.org, GitHub and
+  Ollama's registry all download without a VPN, and the gateway starts. The model
+  did not fit: OpenClaw asks for a 32k-token context, and with the gateway running the
+  4 GB server ran out of memory. Run the model on a host with 8 GB or more (or a
+  GPU), or point OpenClaw at a model server elsewhere; the gateway itself fits.
+
 Retries, failover between gateways and the circuit breaker are the same as for the
 open-weight tier (`OPEN_WEIGHTS_RETRIES`, `OPEN_WEIGHTS_RETRY_BASE_MS`, see
 `api/_resilience.js`).
