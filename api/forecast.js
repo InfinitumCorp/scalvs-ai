@@ -7,13 +7,17 @@
 //   POST /api/forecast { action: "chat", job, message, history? } -> { reply }
 //
 // Engines, in order of preference:
-//  1. CONJURE_URL (+ CONJURE_TOKEN): an external CONJURE engine (unmodified MiroFish).
-//  2. The Worker's AI binding: CONJURE (nexus engine) runs inside this Worker on Workers AI.
-//  3. Neither: 503 { mode: "demo" } and clients run a labeled simulation.
+//  1. CONJURE_URL + CONJURE_PRODUCT_KEY: Conjure's product API (/v1, key cjp_scalvs_…), see _conjure-api.js.
+//  2. CONJURE_URL (+ CONJURE_TOKEN): an external CONJURE engine (unmodified MiroFish).
+//  3. The Worker's AI binding: CONJURE (nexus engine) runs inside this Worker on Workers AI.
+//  4. None: 503 { mode: "demo" } and clients run a labeled simulation.
 
 import { advanceJob, createJob, conjureClient, LIMITS } from './_conjure.js';
 import { advanceLocal, chatLocal } from './_conjure-local.js';
 import { hasWorkersAi, workersAiComplete, workersAiModel } from './_workers-ai.js';
+import {
+  apiConfig, apiClient, createApiJob, normalizeApiJob, advanceApiJob, stopApiJob, chatApiJob,
+} from './_conjure-api.js';
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const STEPS = new Set(['ontology', 'graph_build', 'graph_wait', 'sim_create', 'prepare', 'prepare_wait',
@@ -108,12 +112,49 @@ async function localPost(body, env) {
   }
 }
 
+async function apiPost(body, cfg) {
+  const client = apiClient(cfg);
+  switch (body?.action) {
+    case 'create': {
+      const { job, error } = createApiJob(body);
+      return error ? json({ error }, 400) : json({ mode: 'live', job });
+    }
+    case 'advance': {
+      const job = normalizeApiJob(body.job);
+      if (!job) return json({ error: 'Invalid forecast job' }, 400);
+      return json({ mode: 'live', job: await advanceApiJob(job, client) });
+    }
+    case 'stop': {
+      const job = normalizeApiJob(body.job);
+      if (!job) return json({ error: 'Invalid forecast job' }, 400);
+      return json({ mode: 'live', job: await stopApiJob(job, client) });
+    }
+    case 'chat': {
+      const job = normalizeApiJob(body.job);
+      const message = String(body.message ?? '').slice(0, 1000).trim();
+      if (!job?.ids.prediction_id || job.status !== 'completed') return json({ error: 'Chat is available once the forecast is complete.' }, 400);
+      if (!message) return json({ error: 'Missing message' }, 400);
+      const agentId = typeof body.agentId === 'string' && /^[\w-]{1,20}$/.test(body.agentId) ? body.agentId : undefined;
+      try {
+        const reply = await chatApiJob(job, message, client, agentId);
+        return reply ? json({ mode: 'live', reply: reply.slice(0, 20000) }) : json({ error: 'No answer. Please retry.' }, 502);
+      } catch {
+        return json({ error: 'The CONJURE agents could not answer. Please retry.' }, 502);
+      }
+    }
+    default:
+      return json({ error: 'Unknown action' }, 400);
+  }
+}
+
 export async function POST(request, env) {
   const { baseUrl, token } = config();
+  const productApi = apiConfig();
   if (!baseUrl && !hasWorkersAi(env)) return json({ mode: 'demo', error: 'No forecasting engine is configured' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
+  if (productApi) return apiPost(body, productApi);
   if (!baseUrl) return localPost(body, env);
   const client = conjureClient({ baseUrl, token });
 
