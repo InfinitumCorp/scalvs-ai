@@ -53,49 +53,99 @@ export async function openWeightsComplete(env, model = openWeightsModel(), opts 
 // Re-emit an OpenAI SSE stream in the client's minimal format (same contract as
 // relayStream in run.js and relayWorkersAiStream in _workers-ai.js):
 //   data: {"type":"text","text":"..."} ... then {"type":"done",...} or {"type":"error",...}
+// Keep partial reasoning delimiters between deltas, preserving answer whitespace.
+function reasoningFilter() {
+  let pending = '';
+  let thinking = false;
+  return (chunk, final = false) => {
+    pending += chunk;
+    let answer = '';
+    for (;;) {
+      const tag = thinking ? '</think>' : '<think>';
+      const at = pending.indexOf(tag);
+      if (at >= 0) {
+        if (!thinking) answer += pending.slice(0, at);
+        pending = pending.slice(at + tag.length);
+        thinking = !thinking;
+        continue;
+      }
+      let hold = 0;
+      if (!final) {
+        for (let size = 1; size < tag.length; size++) {
+          if (pending.endsWith(tag.slice(0, size))) hold = size;
+        }
+      }
+      if (!thinking) answer += pending.slice(0, pending.length - hold);
+      pending = hold ? pending.slice(-hold) : '';
+      return answer;
+    }
+  };
+}
+
 export function relayOpenWeightsStream(upstream, model) {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
-  const send = (controller, obj) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+  const reader = upstream.getReader();
+  let cancelled = false;
+  const send = (controller, obj) => {
+    if (!cancelled) controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+  };
   return new ReadableStream({
     async start(controller) {
       let buffer = '';
       let sawText = false;
-      const finish = (extra = {}) => send(controller, { type: 'done', model, ...extra });
+      let terminal = false;
+      let usage = null;
+      const filter = reasoningFilter();
+      const emit = text => {
+        if (!text) return;
+        if (text.trim()) sawText = true;
+        send(controller, { type: 'text', text });
+      };
+      const event = block => {
+        const payload = block.split('\n').filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).replace(/^ /, '')).join('\n').trim();
+        if (!payload) return;
+        if (payload === '[DONE]') { terminal = true; return; }
+        const data = JSON.parse(payload);
+        if (data.error) throw new Error('Upstream model error');
+        if (data.usage) usage = data.usage;
+        const choice = data.choices?.[0];
+        const delta = choice?.delta?.content ?? choice?.text ?? '';
+        if (typeof delta === 'string') emit(filter(delta));
+      };
       try {
-        const reader = upstream.getReader();
-        for (;;) {
+        while (!terminal && !cancelled) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          let nl;
-          while ((nl = buffer.indexOf('\n')) !== -1) {
-            const line = buffer.slice(0, nl).trim();
-            buffer = buffer.slice(nl + 1);
-            if (!line.startsWith('data:')) continue;
-            const payload = line.slice(5).trim();
-            if (payload === '[DONE]') {
-              if (sawText) finish();
-              controller.close();
-              return;
-            }
-            let data;
-            try { data = JSON.parse(payload); } catch { continue; }
-            const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.text ?? '';
-            const text = stripThink(delta);
-            if (text) {
-              sawText = true;
-              send(controller, { type: 'text', text });
-            }
+          // Normalize after concatenation so CRLF may straddle network chunks.
+          buffer = buffer.replace(/\r\n/g, '\n');
+          if (buffer.length > 1024 * 1024) throw new Error('Oversized stream event');
+          let cut;
+          while (!terminal && (cut = buffer.indexOf('\n\n')) !== -1) {
+            const block = buffer.slice(0, cut);
+            buffer = buffer.slice(cut + 2);
+            event(block);
           }
         }
-        if (sawText) finish();
-        else send(controller, { type: 'error', message: 'The model returned no text.' });
-        controller.close();
-      } catch (err) {
-        send(controller, { type: 'error', message: 'The model request could not complete. Please retry.' });
-        controller.close();
+        if (cancelled) return;
+        if (!terminal) throw new Error('Interrupted stream');
+        emit(filter('', true));
+        send(controller, sawText
+          ? { type: 'done', model, usage }
+          : { type: 'error', error: 'The model returned no text. Please retry.' });
+      } catch {
+        send(controller, { type: 'error', error: 'The model stream was interrupted. Please retry.' });
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+        if (!cancelled) controller.close();
       }
+    },
+    async cancel(reason) {
+      cancelled = true;
+      await reader.cancel(reason).catch(() => {});
     },
   });
 }
