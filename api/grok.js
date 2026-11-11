@@ -110,7 +110,9 @@ export async function imagine(request, env) {
     const out = await env.AI.run(IMAGE_MODEL, { prompt, steps: 6 });
     if (!out?.image) return json({ error: 'No image came back. Please retry.' }, 502);
     return json({ image: `data:image/jpeg;base64,${out.image}`, model: IMAGE_MODEL });
-  } catch {
+  } catch (err) {
+    // The account's shared free Workers AI allowance (api/_ai-budget.js) is used up for today.
+    if (err?.name === 'FreeAllowanceUsed') return json({ error: err.message }, 429);
     return json({ error: 'Image generation failed. Please retry.' }, 502);
   }
 }

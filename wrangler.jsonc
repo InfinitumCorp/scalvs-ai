@@ -16,6 +16,8 @@
   // Workers AI runs SCALVS agents and CONJURE forecasts when no ANTHROPIC_API_KEY
   // or CONJURE_URL is set. WORKERS_AI_MODEL overrides the model.
   "ai": { "binding": "AI" },
+  // The account-wide free Workers AI ledger, owned by the conjure-llm Worker.
+  "durable_objects": { "bindings": [{ "name": "AI_BUDGET", "class_name": "Budget", "script_name": "conjure-llm" }] },
   "vars": { "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
   // Per-IP cap on API POSTs (worker.js).
   "ratelimits": [
