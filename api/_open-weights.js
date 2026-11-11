@@ -4,9 +4,37 @@
 // the app still runs live with zero provider keys. No UI changes: this is a
 // drop-in third tier behind Claude and Workers AI, same shapes as _workers-ai.js.
 
+import { parseUrls, poolFor, redactMessages } from './_resilience.js';
+
 export const DEFAULT_OPEN_WEIGHTS_MODEL = 'qwen3:8b';
 
-export const openWeightsBaseUrl = () => (process.env.OPEN_WEIGHTS_URL || 'http://localhost:11434/v1').replace(/\/+$/, '');
+// OPEN_WEIGHTS_URL may list several interchangeable servers, comma-separated;
+// requests fail over down the list (see _resilience.js).
+export const openWeightsUrls = () => parseUrls(process.env.OPEN_WEIGHTS_URL, ['http://localhost:11434/v1']);
+export const openWeightsBaseUrl = () => openWeightsUrls()[0];
+
+const intEnv = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+};
+
+// One call to the open-weight pool: retries with backoff, fails over between servers, trips a
+// circuit breaker on a dead one, and strips credentials from the prompt first
+// (OPEN_WEIGHTS_REDACT=off to disable).
+export function openWeightsFetch(path, init = {}) {
+  let body = init.body;
+  if (process.env.OPEN_WEIGHTS_REDACT !== 'off' && typeof body === 'string') {
+    try {
+      const parsed = JSON.parse(body);
+      if (Array.isArray(parsed.messages)) {
+        const { messages, count } = redactMessages(parsed.messages);
+        if (count) body = JSON.stringify({ ...parsed, messages });
+      }
+    } catch { /* not JSON: send as is */ }
+  }
+  const pool = poolFor(openWeightsUrls(), { retries: intEnv('OPEN_WEIGHTS_RETRIES', 2), baseMs: intEnv('OPEN_WEIGHTS_RETRY_BASE_MS', 400) });
+  return pool.fetch(path, { ...init, body });
+}
 export const openWeightsModel = () => process.env.OPEN_WEIGHTS_MODEL || DEFAULT_OPEN_WEIGHTS_MODEL;
 
 // A key is never required (Ollama ignores it); set OPEN_WEIGHTS_KEY only for gateways that insist.
@@ -37,7 +65,7 @@ export function openWeightsBody(model, messages, opts = {}) {
 
 // A non-streamed answer: POST /chat/completions -> { model, output }.
 export async function openWeightsComplete(env, model = openWeightsModel(), opts = {}) {
-  const res = await fetch(`${openWeightsBaseUrl()}/chat/completions`, {
+  const res = await openWeightsFetch('/chat/completions', {
     method: 'POST',
     headers: openWeightsHeaders(),
     signal: AbortSignal.timeout(opts.timeoutMs ?? 120000),

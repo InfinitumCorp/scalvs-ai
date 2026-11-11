@@ -11,7 +11,7 @@
 // never simulated successes.
 
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
-import { hasOpenWeights, openWeightsBaseUrl, openWeightsComplete, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
+import { hasOpenWeights, openWeightsComplete, openWeightsFetch, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
 import { agentTools } from './connectors.js';
 import { THINK_MODEL, VISION_MODEL, cleanImages, deepSearch, sourcesBlock, sourcesFooter, splitThinking } from './grok.js';
 import { browserTool, hasBrowser } from './_browser.js';
@@ -336,7 +336,7 @@ export function relayStream(upstream) {
 async function runOpenWeights(system, user, stream) {
   const model = openWeightsModel();
   try {
-    const upstream = await fetch(`${openWeightsBaseUrl()}/chat/completions`, {
+    const upstream = await openWeightsFetch('/chat/completions', {
       method: 'POST',
       headers: openWeightsHeaders(),
       signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
@@ -414,7 +414,7 @@ async function runOpenWeightsToolLoop({ system, user, tools, signal }) {
   for (let round = 0; round <= WAI_TOOL_ROUNDS; round++) {
     const allowTools = !final && round < WAI_TOOL_ROUNDS && defs.length > 0;
     if (!allowTools) messages.push({ role: 'user', content: 'Now write the final answer from the tool results above. Do not call any more tools.' });
-    const res = await fetch(`${openWeightsBaseUrl()}/chat/completions`, {
+    const res = await openWeightsFetch('/chat/completions', {
       method: 'POST',
       headers: openWeightsHeaders(),
       signal: combineSignals(signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)),
