@@ -8,13 +8,14 @@ import * as forecast from './api/forecast.js';
 import * as connectors from './api/connectors.js';
 import * as automations from './api/automations.js';
 import { imagine, share } from './api/grok.js';
+import * as scalvsAgent from './api/scalvs-agent.js';
 import { budgetedAI, FreeAllowanceUsed } from './api/_ai-budget.js';
 
 // Every Workers AI call on the account is charged to one shared ledger (the conjure-llm
 // Worker's Budget Durable Object), so usage stays inside the free 10,000 neurons a day.
 const withBudget = (env, ctx) => (env.AI && env.AI_BUDGET ? { ...env, AI: budgetedAI(env.AI, env.AI_BUDGET, { waitUntil: ctx?.waitUntil?.bind(ctx) }) } : env);
 
-const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share } };
+const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share }, '/api/openclaw': scalvsAgent };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
