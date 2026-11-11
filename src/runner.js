@@ -365,6 +365,58 @@ export function clearFinished() {
   update((st) => { st.runs = st.runs.filter(isActive); });
 }
 
+// "@search <question>": Infinitum Search reads the web behind /api/search and answers with numbered
+// sources. Shown as a one-step run in the same chat thread. Needs the person's Cumulus ID token.
+export const SEARCH_AGENT_ID = 'infinitum-search';
+
+/** The answer, then the numbered sources, as Markdown. */
+export function searchRunText(data) {
+  const sources = Array.isArray(data?.sources) ? data.sources : [];
+  const lines = sources.map((s) => `${s.n}. [${String(s.title || s.url).replace(/[[\]]/g, '')}](${s.url})`);
+  const answer = data?.answer || (sources.length ? 'No written answer right now. These are the sources found:' : 'Nothing found on the web for that.');
+  return lines.length ? `${answer}\n\n**Sources**\n${lines.join('\n')}` : answer;
+}
+
+export function startSearchRun({ task, opts = {}, token }) {
+  if (typeof task !== 'string' || !task.trim() || task.length > 2000) return { error: 'Enter a question between 1 and 2000 characters.' };
+  if (!token) return { error: 'Sign in with Cumulus ID to use @search.' };
+  const run = {
+    id: uid('run'),
+    title: 'Infinitum Search',
+    task: task.trim(),
+    status: 'running',
+    createdAt: Date.now(),
+    current: 0,
+    steps: [{ agentId: SEARCH_AGENT_ID, name: 'Infinitum Search', status: 'running', output: '', mode: 'live' }],
+    parentId: opts.parentId || undefined,
+    private: opts.private || undefined,
+    attached: [],
+  };
+  update((st) => { st.runs.unshift(run); });
+  const ctrl = new AbortController();
+  controllers.set(run.id, ctrl);
+  (async () => {
+    try {
+      const res = await fetch('api/search', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: run.task }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) throw new Error('Sign in with Cumulus ID to use @search.');
+      if (!res.ok || !data.mention) throw new Error(data.error || 'Write a question after @search.');
+      mutateRun(run.id, (r) => { r.steps[0].status = 'done'; r.steps[0].output = searchRunText(data); r.status = 'completed'; r.verified = false; r.finishedAt = Date.now(); });
+    } catch (err) {
+      const stopped = ctrl.signal.aborted;
+      mutateRun(run.id, (r) => { r.steps[0].status = stopped ? 'stopped' : 'failed'; r.status = stopped ? 'stopped' : 'failed'; r.finishedAt = Date.now(); if (!stopped) r.error = err.message; });
+    } finally {
+      controllers.delete(run.id);
+    }
+  })();
+  return { run };
+}
+
 // "@scalvs <task>" (or "@scalus"): one answer from the SCALVS agent, which runs on an OpenClaw
 // gateway behind /api/openclaw. Shown as a one-step run so it lives in the same chat thread.
 // Needs the person's Cumulus ID token; the gateway token never leaves the server.

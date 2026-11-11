@@ -1,6 +1,6 @@
 import { getState } from '../store.js';
 import { TEMPLATES } from '../data.js';
-import { startRun, approve, reject, stopRun, isLive, mediaFor, chainOf, startScalvsAgentRun, SCALVS_AGENT_ID } from '../runner.js';
+import { startRun, approve, reject, stopRun, isLive, mediaFor, chainOf, startScalvsAgentRun, SCALVS_AGENT_ID, startSearchRun, SEARCH_AGENT_ID } from '../runner.js';
 import { mentionIn, conjureQuestion } from '../mentions.js';
 import { update, uid } from '../store.js';
 import { MODES, PERSONALITIES, composerExtras, bindExtras, takeAttachments, attachState, shareRun, speak, createAutomation } from '../grok.js';
@@ -178,6 +178,14 @@ export function bind(root, rerender) {
       location.hash = `#/command?run=${res.run.id}`;
       return;
     }
+    // "@search <question>": Infinitum Search reads the web and answers with numbered sources.
+    if (mention === 'search') {
+      const res = startSearchRun({ task, opts: followUp, token: cidToken() });
+      if (res.error) { toast(res.error); return; }
+      taskDraft = '';
+      location.hash = `#/command?run=${res.run.id}`;
+      return;
+    }
     const s = getState();
     const [kind, id] = String(fd.get('target')).split(':');
     const agentIds = kind === 'team' ? (s.teams.find((t) => t.id === id)?.agentIds || []) : [id];
@@ -205,6 +213,12 @@ export function bind(root, rerender) {
     else if (action === 'regenerate') {
       const run = getState().runs.find((x) => x.id === id);
       if (!run) return;
+      if (run.steps[0]?.agentId === SEARCH_AGENT_ID) {
+        const again = startSearchRun({ task: run.task, opts: { parentId: run.parentId, private: run.private }, token: window.CumulusID?.token?.() || '' });
+        if (again.error) { toast(again.error); return; }
+        location.hash = `#/command?run=${again.run.id}`;
+        return;
+      }
       if (run.steps[0]?.agentId === SCALVS_AGENT_ID) {
         const again = startScalvsAgentRun({ task: run.task, opts: { parentId: run.parentId, private: run.private }, token: window.CumulusID?.token?.() || '' });
         if (again.error) { toast(again.error); return; }
