@@ -5,17 +5,23 @@
 //
 // Runs one agent step against the Claude Messages API when ANTHROPIC_API_KEY is
 // set, otherwise against Workers AI through the Worker's AI binding, otherwise
-// against the operator's keyless open-weight server (OPEN_WEIGHTS_URL). With
+// against the operator's keyless open-weight server (OPEN_WEIGHTS_URL). An
+// OpenClaw gateway (OPENCLAW_URL) outranks all of them: when set, agents run on
+// OpenClaw (open source, MIT) and the others are not used. With
 // none of these it answers 503 { mode: "demo" } and the client falls back to its
 // built-in simulated runner. Provider failures and empty responses are errors,
 // never simulated successes.
 
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
-import { hasOpenWeights, openWeightsComplete, openWeightsFetch, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
+import { hasOpenClaw, hasOpenWeights, openWeightsTimeoutMs, openWeightsComplete, openWeightsFetch, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
 import { agentTools } from './connectors.js';
 import { THINK_MODEL, VISION_MODEL, cleanImages, deepSearch, sourcesBlock, sourcesFooter, splitThinking } from './grok.js';
 import { browserTool, hasBrowser } from './_browser.js';
 import { pluginTools } from './plugins.js';
+
+// The OpenAI-compatible tier runs when OpenClaw is configured (it outranks
+// everything), or as the keyless fallback when there is no Workers AI binding.
+const useOpenWeights = (env) => hasOpenClaw() || (!hasWorkersAi(env) && hasOpenWeights());
 
 export const PERSONALITIES = {
   concise: 'Be extremely brief. Bullet points, no filler.',
@@ -35,8 +41,20 @@ function searchTool(env) {
   };
 }
 
+async function openWeightsGenerate({ env, system, user, think }) {
+  const thinkModel = hasOpenClaw() ? '' : process.env.OPEN_WEIGHTS_THINK_MODEL;
+  const { model, output } = await openWeightsComplete(env, thinkModel || openWeightsModel(), {
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    maxTokens: think ? 6000 : 2000,
+  });
+  if (!think) return { model, thinking: '', output };
+  const { thinking, answer } = splitThinking(output);
+  return { model, thinking, output: answer };
+}
+
 // One non-streamed answer, with optional images (vision) and reasoning (think).
 async function generate({ env, key, system, user, images = [], think = false }) {
+  if (hasOpenClaw() && !images.length) return openWeightsGenerate({ env, system, user, think });
   if (key) {
     const content = [...images.map((d) => {
       const [, media, data] = d.match(/^data:([^;]+);base64,(.*)$/);
@@ -64,15 +82,7 @@ async function generate({ env, key, system, user, images = [], think = false }) 
   }
   // Keyless tier 3: an operator-run open-weight server (Ollama, llama.cpp, vLLM…).
   // Same contract as the Workers AI path above, no binding and no key required.
-  if (!hasWorkersAi(env) && hasOpenWeights()) {
-    const { model, output } = await openWeightsComplete(env, process.env.OPEN_WEIGHTS_THINK_MODEL || openWeightsModel(), {
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      maxTokens: think ? 6000 : 2000,
-    });
-    if (!think) return { model, thinking: '', output };
-    const { thinking, answer } = splitThinking(output);
-    return { model, thinking, output: answer };
-  }
+  if (useOpenWeights(env)) return openWeightsGenerate({ env, system, user, think });
   const model = think ? THINK_MODEL : workersAiModel();
   const r = await env.AI.run(model, { messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: think ? 6000 : 2000 });
   const text = resultText(r);
@@ -217,6 +227,7 @@ export async function POST(request, env) {
     }
   }
 
+  if (hasOpenClaw()) return runOpenWeights(buildSystemPrompt(body.agent, body.context) + personaLine, withFiles, stream);
   if (!key) {
     if (hasWorkersAi(env)) return runWorkersAi(env, buildSystemPrompt(body.agent, body.context) + personaLine, withFiles, stream);
     if (hasOpenWeights()) return runOpenWeights(buildSystemPrompt(body.agent, body.context) + personaLine, withFiles, stream);
@@ -339,7 +350,7 @@ async function runOpenWeights(system, user, stream) {
     const upstream = await openWeightsFetch('/chat/completions', {
       method: 'POST',
       headers: openWeightsHeaders(),
-      signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(openWeightsTimeoutMs()),
       body: JSON.stringify({
         model,
         max_tokens: 1500,
@@ -348,7 +359,8 @@ async function runOpenWeights(system, user, stream) {
       }),
     });
     if (!upstream.ok) return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
-    if (stream) return relayOpenWeightsStream(upstream.body, model);
+    // The relay is a bare ReadableStream: wrap it, or the Worker sends an empty body.
+    if (stream) return new Response(relayOpenWeightsStream(upstream.body, model), { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
     const data = await upstream.json();
     const output = openWeightsResultText(data);
     if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
@@ -376,7 +388,7 @@ async function runWorkersAi(env, system, user, stream) {
 }
 
 export function GET(_request, env) {
-  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) || hasWorkersAi(env) || hasOpenWeights() });
+  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) || hasWorkersAi(env) || hasOpenWeights(), ...(hasOpenClaw() ? { engine: 'openclaw' } : {}) });
 }
 
 // ---------- connected-app tool loop ----------
@@ -417,7 +429,7 @@ async function runOpenWeightsToolLoop({ system, user, tools, signal }) {
     const res = await openWeightsFetch('/chat/completions', {
       method: 'POST',
       headers: openWeightsHeaders(),
-      signal: combineSignals(signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)),
+      signal: combineSignals(signal, AbortSignal.timeout(openWeightsTimeoutMs())),
       body: JSON.stringify({ model, max_tokens: 2000, messages, ...(allowTools ? { tools: defs } : {}) }),
     });
     if (!res.ok) throw new Error(`Model request failed (${res.status})`);
@@ -450,6 +462,7 @@ async function runOpenWeightsToolLoop({ system, user, tools, signal }) {
 // Claude when ANTHROPIC_API_KEY is set, otherwise Workers AI function calling.
 export async function runToolLoop({ env, key, system, user, tools, signal }) {
   const used = [];
+  if (hasOpenClaw()) return runOpenWeightsToolLoop({ system, user, tools, signal });
   if (key) {
     const model = process.env.SCALVS_MODEL || DEFAULT_MODEL;
     const messages = [{ role: 'user', content: user }];
@@ -481,7 +494,7 @@ export async function runToolLoop({ env, key, system, user, tools, signal }) {
 
   // Keyless tier 3: the operator's open-weight server, same OpenAI tool format
   // Workers AI already speaks (defs below are built in that shape).
-  if (!hasWorkersAi(env) && hasOpenWeights()) return runOpenWeightsToolLoop({ system, user, tools, signal });
+  if (useOpenWeights(env)) return runOpenWeightsToolLoop({ system, user, tools, signal });
 
   // Open models tend to repeat calls they already made. A repeated call gets its
   // earlier result and ends tool use, and there are at most WAI_TOOL_ROUNDS rounds,

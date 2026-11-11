@@ -18,6 +18,7 @@ This is the first working prototype of the four-step flow from the [product page
 
 Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.js`), which calls the Claude Messages API.
 
+- **Live on OpenClaw (open source):** set `OPENCLAW_URL` (and the `OPENCLAW_TOKEN` secret) and agents run on an [OpenClaw](https://github.com/openclaw/openclaw) gateway (MIT), ahead of every other engine. Pair it with free local models for a fully open-source stack. Setup: [docs/openclaw.md](docs/openclaw.md).
 - **Live on Workers AI (default on scalvs.app):** with no key set, agents run on the Worker's Workers AI binding (`WORKERS_AI_MODEL`, default `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), billed to the Cloudflare account. No provider key is needed.
 - **Live on Claude:** set `ANTHROPIC_API_KEY` as a Worker secret (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
 - **Demo:** with no key the function answers `503` and the app falls back to simulated agent output, so everything still works end to end.
@@ -121,6 +122,9 @@ Set secrets with `npx wrangler secret put <NAME>`, or put them in a git-ignored 
 | `ANTHROPIC_API_KEY` | secret | Turns on live agents. |
 | `SCALVS_MODEL` | var | Optional model override (default `claude-sonnet-5-5`). |
 | `ANTHROPIC_BASE_URL` | var | Optional gateway URL. |
+| `OPENCLAW_URL` | var | OpenClaw gateway URL (`…/v1`). When set, agents run on OpenClaw. See [docs/openclaw.md](docs/openclaw.md). |
+| `OPENCLAW_TOKEN` | secret | OpenClaw gateway token (full operator access to that gateway). |
+| `OPENCLAW_AGENT` / `OPENCLAW_MODEL` | var | Optional agent target (default `openclaw/default`) and provider model override. |
 | `CONJURE_URL` | var | CONJURE™ engine base URL. Must be private or behind a token-checking proxy. |
 | `CONJURE_TOKEN` | secret | Token for that proxy. |
 
