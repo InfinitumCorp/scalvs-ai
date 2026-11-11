@@ -4,12 +4,14 @@
 //   stream=true  -> text/event-stream of {type:"text"|"done"|"error"} events
 //
 // Runs one agent step against the Claude Messages API when ANTHROPIC_API_KEY is
-// set, otherwise against Workers AI through the Worker's AI binding. With
-// neither it answers 503 { mode: "demo" } and the client falls back to its
+// set, otherwise against Workers AI through the Worker's AI binding, otherwise
+// against the operator's keyless open-weight server (OPEN_WEIGHTS_URL). With
+// none of these it answers 503 { mode: "demo" } and the client falls back to its
 // built-in simulated runner. Provider failures and empty responses are errors,
 // never simulated successes.
 
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
+import { hasOpenWeights, openWeightsBaseUrl, openWeightsComplete, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
 import { agentTools } from './connectors.js';
 import { THINK_MODEL, VISION_MODEL, cleanImages, deepSearch, sourcesBlock, sourcesFooter, splitThinking } from './grok.js';
 import { browserTool, hasBrowser } from './_browser.js';
@@ -59,6 +61,17 @@ async function generate({ env, key, system, user, images = [], think = false }) 
     const content = [{ type: 'text', text: user }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))];
     const r = await env.AI.run(VISION_MODEL, { messages: [{ role: 'system', content: system }, { role: 'user', content }], max_tokens: 2000 });
     return { model: VISION_MODEL, thinking: '', output: resultText(r).trim() };
+  }
+  // Keyless tier 3: an operator-run open-weight server (Ollama, llama.cpp, vLLM…).
+  // Same contract as the Workers AI path above, no binding and no key required.
+  if (!hasWorkersAi(env) && hasOpenWeights()) {
+    const { model, output } = await openWeightsComplete(env, process.env.OPEN_WEIGHTS_THINK_MODEL || openWeightsModel(), {
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      maxTokens: think ? 6000 : 2000,
+    });
+    if (!think) return { model, thinking: '', output };
+    const { thinking, answer } = splitThinking(output);
+    return { model, thinking, output: answer };
   }
   const model = think ? THINK_MODEL : workersAiModel();
   const r = await env.AI.run(model, { messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: think ? 6000 : 2000 });
@@ -124,7 +137,7 @@ export function buildSystemPrompt(agent = {}, context = [], liveTools = []) {
 
 export async function POST(request, env) {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key && !hasWorkersAi(env)) return json({ mode: 'demo', error: 'No model is configured' }, 503);
+  if (!key && !hasWorkersAi(env) && !hasOpenWeights()) return json({ mode: 'demo', error: 'No model is configured' }, 503);
 
   let body;
   try {
@@ -204,7 +217,10 @@ export async function POST(request, env) {
     }
   }
 
-  if (!key) return runWorkersAi(env, buildSystemPrompt(body.agent, body.context) + personaLine, withFiles, stream);
+  if (!key) {
+    if (hasWorkersAi(env)) return runWorkersAi(env, buildSystemPrompt(body.agent, body.context) + personaLine, withFiles, stream);
+    if (hasOpenWeights()) return runOpenWeights(buildSystemPrompt(body.agent, body.context) + personaLine, withFiles, stream);
+  }
 
   try {
     const upstream = await fetch(apiUrl(), {
@@ -315,6 +331,33 @@ export function relayStream(upstream) {
   });
 }
 
+// Keyless tier 3 (plain chat): the operator's open-weight server. Streaming goes
+// through the same minimal SSE contract the client already speaks.
+async function runOpenWeights(system, user, stream) {
+  const model = openWeightsModel();
+  try {
+    const upstream = await fetch(`${openWeightsBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: openWeightsHeaders(),
+      signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+      body: JSON.stringify({
+        model,
+        max_tokens: 1500,
+        stream: Boolean(stream),
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      }),
+    });
+    if (!upstream.ok) return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
+    if (stream) return relayOpenWeightsStream(upstream.body, model);
+    const data = await upstream.json();
+    const output = openWeightsResultText(data);
+    if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
+    return json({ mode: 'live', model, output, usage: data.usage || null });
+  } catch {
+    return json({ error: 'The model request could not complete. Please retry.' }, 502);
+  }
+}
+
 async function runWorkersAi(env, system, user, stream) {
   const model = workersAiModel();
   try {
@@ -333,7 +376,7 @@ async function runWorkersAi(env, system, user, stream) {
 }
 
 export function GET(_request, env) {
-  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) || hasWorkersAi(env) });
+  return json({ ok: true, live: Boolean(process.env.ANTHROPIC_API_KEY) || hasWorkersAi(env) || hasOpenWeights() });
 }
 
 // ---------- connected-app tool loop ----------
@@ -356,6 +399,52 @@ async function runTool(tools, name, input, used) {
   used.push(tool.label);
   try { return { text: await tool.run(input && typeof input === 'object' ? input : {}), isError: false }; }
   catch (e) { return { text: `Error: ${String(e?.message || e).slice(0, 300)}`, isError: true }; }
+}
+
+// Keyless tier 3 (tool loop): OpenAI-format tools against the operator's
+// open-weight server. Mirrors the Workers AI loop: repeated calls get their
+// earlier result back and end tool use, so the model must then answer.
+async function runOpenWeightsToolLoop({ system, user, tools, signal }) {
+  const model = openWeightsModel();
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+  const defs = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
+  const used = [];
+  const seen = new Map();
+  let final = false;
+  for (let round = 0; round <= WAI_TOOL_ROUNDS; round++) {
+    const allowTools = !final && round < WAI_TOOL_ROUNDS && defs.length > 0;
+    if (!allowTools) messages.push({ role: 'user', content: 'Now write the final answer from the tool results above. Do not call any more tools.' });
+    const res = await fetch(`${openWeightsBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: openWeightsHeaders(),
+      signal: combineSignals(signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)),
+      body: JSON.stringify({ model, max_tokens: 2000, messages, ...(allowTools ? { tools: defs } : {}) }),
+    });
+    if (!res.ok) throw new Error(`Model request failed (${res.status})`);
+    const data = await res.json();
+    const msg = data.choices?.[0]?.message ?? {};
+    const calls = (msg.tool_calls ?? [])
+      .map((c) => {
+        let args = c.function?.arguments ?? {};
+        if (typeof args === 'string') { try { args = JSON.parse(args || '{}'); } catch { args = {}; } }
+        return { id: c.id, name: c.function?.name, args };
+      })
+      .filter((c) => c.name);
+    if (!calls.length || !allowTools) return { model, used, output: stripThink(msg.content).trim() };
+    messages.push({ role: 'assistant', content: msg.content ?? '', tool_calls: msg.tool_calls });
+    for (const call of calls) {
+      const key = `${call.name}:${JSON.stringify(call.args)}`;
+      if (seen.has(key)) {
+        final = true;
+        messages.push({ role: 'tool', tool_call_id: call.id, content: `${seen.get(key)}\n(You already called this; use this result.)` });
+        continue;
+      }
+      const out = await runTool(tools, call.name, call.args, used);
+      seen.set(key, out.text);
+      messages.push({ role: 'tool', tool_call_id: call.id, content: out.text, ...(out.isError ? { is_error: true } : {}) });
+    }
+  }
+  throw new Error('Too many tool rounds');
 }
 
 // Claude when ANTHROPIC_API_KEY is set, otherwise Workers AI function calling.
@@ -389,6 +478,10 @@ export async function runToolLoop({ env, key, system, user, tools, signal }) {
     }
     throw new Error('Too many tool rounds');
   }
+
+  // Keyless tier 3: the operator's open-weight server, same OpenAI tool format
+  // Workers AI already speaks (defs below are built in that shape).
+  if (!hasWorkersAi(env) && hasOpenWeights()) return runOpenWeightsToolLoop({ system, user, tools, signal });
 
   // Open models tend to repeat calls they already made. A repeated call gets its
   // earlier result and ends tool use, and there are at most WAI_TOOL_ROUNDS rounds,
