@@ -50,6 +50,10 @@ export function openWeightsFetch(path, init = {}) {
 }
 // With OpenClaw the "model" is the agent target (openclaw/<agentId>); the provider
 // model behind it is OpenClaw's choice unless OPENCLAW_MODEL overrides it.
+// How long one model call may take. CPU-only servers reading OpenClaw's large
+// agent prompt can need several minutes (OPEN_WEIGHTS_TIMEOUT_MS, default 120 s).
+export const openWeightsTimeoutMs = () => intEnv('OPEN_WEIGHTS_TIMEOUT_MS', 120000) || 120000;
+
 export const openWeightsModel = () => (hasOpenClaw()
   ? process.env.OPENCLAW_AGENT || DEFAULT_OPENCLAW_AGENT
   : process.env.OPEN_WEIGHTS_MODEL || DEFAULT_OPEN_WEIGHTS_MODEL);
@@ -96,7 +100,7 @@ export async function openWeightsComplete(env, model = openWeightsModel(), opts 
   const res = await openWeightsFetch('/chat/completions', {
     method: 'POST',
     headers: openWeightsHeaders(),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 120000),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? openWeightsTimeoutMs()),
     body: JSON.stringify(openWeightsBody(model, opts.messages ?? [], opts)),
   });
   if (!res.ok) throw new Error(`Open-weight model server error ${res.status}`);
@@ -138,8 +142,10 @@ export function relayOpenWeightsStream(upstream, model) {
             let data;
             try { data = JSON.parse(payload); } catch { continue; }
             const delta = data?.choices?.[0]?.delta?.content ?? data?.choices?.[0]?.text ?? '';
-            const text = stripThink(delta);
-            if (text) {
+            // Keep each chunk's spaces: tokens arrive as " word", so trimming
+            // them would glue the answer together. Only complete <think> blocks go.
+            const text = String(delta).replace(/<think>[\s\S]*?<\/think>/g, '');
+            if (text && (sawText || text.trim())) {
               sawText = true;
               send(controller, { type: 'text', text });
             }

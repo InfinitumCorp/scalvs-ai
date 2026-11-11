@@ -67,6 +67,20 @@ test('an OpenAI SSE stream is re-emitted in the client\'s minimal format', async
   assert.equal(events[2].model, 'm1');
 });
 
+test('streamed chunks keep the spaces between words', async () => {
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    start(c) {
+      for (const t of ['An', ' agent', ' gateway', ' routes', ' work.']) c.enqueue(enc.encode(`data: {"choices":[{"delta":{"content":${JSON.stringify(t)}}}]}\n\n`));
+      c.enqueue(enc.encode('data: [DONE]\n\n'));
+      c.close();
+    },
+  });
+  const text = await new Response(relayOpenWeightsStream(stream, 'm1')).text();
+  const events = text.trim().split('\n\n').map((l) => JSON.parse(l.slice(5)));
+  assert.equal(events.filter((e) => e.type === 'text').map((e) => e.text).join(''), 'An agent gateway routes work.');
+});
+
 test('/api/run answers live from the open-weight server with no key and no AI binding', async () => {
   process.env.OPEN_WEIGHTS_URL = 'http://m:11434/v1';
   let seen;

@@ -13,7 +13,7 @@
 // never simulated successes.
 
 import { hasWorkersAi, relayWorkersAiStream, resultText, workersAiModel } from './_workers-ai.js';
-import { hasOpenClaw, hasOpenWeights, openWeightsComplete, openWeightsFetch, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
+import { hasOpenClaw, hasOpenWeights, openWeightsTimeoutMs, openWeightsComplete, openWeightsFetch, openWeightsHeaders, openWeightsModel, openWeightsResultText, relayOpenWeightsStream, stripThink } from './_open-weights.js';
 import { agentTools } from './connectors.js';
 import { THINK_MODEL, VISION_MODEL, cleanImages, deepSearch, sourcesBlock, sourcesFooter, splitThinking } from './grok.js';
 import { browserTool, hasBrowser } from './_browser.js';
@@ -350,7 +350,7 @@ async function runOpenWeights(system, user, stream) {
     const upstream = await openWeightsFetch('/chat/completions', {
       method: 'POST',
       headers: openWeightsHeaders(),
-      signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(openWeightsTimeoutMs()),
       body: JSON.stringify({
         model,
         max_tokens: 1500,
@@ -429,7 +429,7 @@ async function runOpenWeightsToolLoop({ system, user, tools, signal }) {
     const res = await openWeightsFetch('/chat/completions', {
       method: 'POST',
       headers: openWeightsHeaders(),
-      signal: combineSignals(signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)),
+      signal: combineSignals(signal, AbortSignal.timeout(openWeightsTimeoutMs())),
       body: JSON.stringify({ model, max_tokens: 2000, messages, ...(allowTools ? { tools: defs } : {}) }),
     });
     if (!res.ok) throw new Error(`Model request failed (${res.status})`);

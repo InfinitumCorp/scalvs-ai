@@ -72,6 +72,10 @@ Use a Cloudflare Tunnel (free) in front of the gateway rather than opening a por
 | Browse mode | OpenClaw drives the tool loop |
 | Image attachments | Still Claude or Workers AI vision (OpenClaw's chat endpoint gets text only) |
 
+OpenClaw adds its own agent prompt (about 13.5k tokens) to every step. On a CPU-only
+server with a small model that takes 1-2 minutes per step, so raise
+`OPEN_WEIGHTS_TIMEOUT_MS` (default 120000) there, or give the model a GPU.
+
 Retries, failover between gateways and the circuit breaker are the same as for the
 open-weight tier (`OPEN_WEIGHTS_RETRIES`, `OPEN_WEIGHTS_RETRY_BASE_MS`, see
 `api/_resilience.js`).
