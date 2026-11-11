@@ -13,6 +13,10 @@
     { "pattern": "scalvs.app", "custom_domain": true },
     { "pattern": "www.scalvs.app", "custom_domain": true }
   ],
+  // No public *.workers.dev route; each uploaded version (npm run deploy:preview)
+  // gets its own preview URL for testing before it serves users.
+  "workers_dev": false,
+  "preview_urls": true,
   // Workers AI runs SCALVS agents and CONJURE forecasts when no ANTHROPIC_API_KEY
   // or CONJURE_URL is set. WORKERS_AI_MODEL overrides the model.
   "ai": { "binding": "AI" },
