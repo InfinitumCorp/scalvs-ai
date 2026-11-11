@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createScalvsAgentHandler, createCidVerifier } from '../api/scalvs-agent.js';
+import { createScalvsAgentHandler, createCidVerifier, gatewayEnv } from '../api/scalvs-agent.js';
 import { mentionIn, conjureQuestion } from '../src/mentions.js';
 
 const ENV = { OPENCLAW_GATEWAY_URL: 'https://claw.test', OPENCLAW_GATEWAY_TOKEN: 'tok_secret', OPENCLAW_AGENT: 'openclaw/scalvs' };
@@ -76,4 +76,14 @@ test('the Cumulus ID verifier asks the issuer and caches the answer', async () =
   assert.equal(calls, 1);
   assert.equal(await v('bad'), null);
   assert.equal(await v(''), null);
+});
+
+test('also reads the OPENCLAW_URL / OPENCLAW_TOKEN pair that agent runs use', async () => {
+  const urls = [];
+  const fetch = async (url, init) => { urls.push(url); return gateway(url, init); };
+  const handle = createScalvsAgentHandler({ env: { OPENCLAW_URL: 'https://claw.test/v1/', OPENCLAW_TOKEN: 't', OPENCLAW_AGENT: 'openclaw/default' }, verify, fetch });
+  const res = await handle(post('@scalvs go'));
+  assert.equal(res.status, 200);
+  assert.equal(urls.at(-1), 'https://claw.test/v1/chat/completions');
+  assert.equal(gatewayEnv({ OPENCLAW_GATEWAY_URL: 'https://a.test', OPENCLAW_URL: 'https://b.test/v1' }).OPENCLAW_GATEWAY_URL, 'https://a.test');
 });

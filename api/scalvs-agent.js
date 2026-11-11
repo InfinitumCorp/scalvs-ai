@@ -37,13 +37,24 @@ export function createCidVerifier({ issuer = DEFAULT_ISSUER, fetch: fetchImpl } 
   };
 }
 
+/**
+ * The gateway settings: OPENCLAW_GATEWAY_URL / OPENCLAW_GATEWAY_TOKEN (as on +SPCTR), or the
+ * OPENCLAW_URL (".../v1") / OPENCLAW_TOKEN pair that "Run agents on OpenClaw" uses, so one
+ * gateway configured once serves both.
+ */
+export function gatewayEnv(env) {
+  const url = env.OPENCLAW_GATEWAY_URL || (env.OPENCLAW_URL ? String(env.OPENCLAW_URL).replace(/\/+$/, '').replace(/\/v1$/, '') : undefined);
+  const token = env.OPENCLAW_GATEWAY_TOKEN || env.OPENCLAW_TOKEN;
+  return { OPENCLAW_GATEWAY_URL: url, OPENCLAW_GATEWAY_TOKEN: token, OPENCLAW_AGENT: env.OPENCLAW_AGENT };
+}
+
 /** The /api/openclaw handler. Options are for tests; production reads process.env. */
 export function createScalvsAgentHandler({ env = process.env, verify, fetch } = {}) {
   const check = verify ?? createCidVerifier({ issuer: env.CID_ISSUER || DEFAULT_ISSUER });
   return async function handle(request) {
     const auth = request.headers.get('authorization') || '';
     const cid = /^Bearer\s+/i.test(auth) ? await check(auth.replace(/^Bearer\s+/i, '').trim()) : null;
-    const routes = openClawRoutesFromEnv(env, { product: 'scalvs', prefix: '/api/openclaw', fetch });
+    const routes = openClawRoutesFromEnv(gatewayEnv(env), { product: 'scalvs', prefix: '/api/openclaw', fetch });
     const res = await routes(request, { user: cid });
     return res ?? new Response(JSON.stringify({ error: 'not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
   };
