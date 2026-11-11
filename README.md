@@ -24,6 +24,17 @@ Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.j
 
 The composer shows which mode is active.
 
+For a self-hosted OpenAI-compatible model server, set `OPEN_WEIGHTS_URL` to its
+`/v1` endpoint and `OPEN_WEIGHTS_MODEL` to an installed model. This backend is
+used when Claude and Workers AI are unavailable. It supports streaming answers
+from servers such as Ollama and vLLM without requiring a provider key. Streaming
+preserves answer whitespace and UTF-8, hides inline `<think>` blocks even when
+their delimiters cross chunks, and forwards usage accounting. Empty answers,
+malformed events, provider errors and streams missing their terminal `[DONE]`
+event fail the run. Stopping the client cancels the upstream response reader.
+Model installation, hardware capacity and model-weight licensing remain the
+operator's responsibility; configuring an endpoint does not download weights.
+
 Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. A streamed answer counts only when the stream ends with an explicit completion event; provider stream errors, early disconnects and text-less streams fail the step. Approval applies only to the currently pending draft and cannot advance a team twice. **Stop** aborts the in-flight request, marks the run stopped and releases queued steps' credit reservations (the started step keeps its charge); a stopped run cannot be approved or completed afterwards. Runs left `running` by a page reload are stopped on the next load. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
 
 ## Connectors

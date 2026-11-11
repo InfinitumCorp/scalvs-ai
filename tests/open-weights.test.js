@@ -16,6 +16,75 @@ import {
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
+
+async function relayEvents(chunks) {
+  const stream = new ReadableStream({ start(c) {
+    for (const chunk of chunks) c.enqueue(new TextEncoder().encode(chunk));
+    c.close();
+  } });
+  const text = await new Response(relayOpenWeightsStream(stream, 'test')).text();
+  return text.trim().split('\n\n').map(line => JSON.parse(line.slice(5)));
+}
+const delta = text => `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`;
+
+test('streamed reasoning tags are hidden across every delimiter split and spaces survive', async () => {
+  const content = '<think>private reasoning</think>Hello world!';
+  for (let split = 1; split < content.length; split++) {
+    const events = await relayEvents([delta(content.slice(0, split)), delta(content.slice(split)), 'data: [DONE]\n\n']);
+    assert.equal(events.filter(e => e.type === 'text').map(e => e.text).join(''), 'Hello world!');
+    assert.equal(events.at(-1).type, 'done');
+  }
+  const events = await relayEvents([delta('Hello'), delta(' '), delta('world'), 'data: [DONE]\n\n']);
+  assert.equal(events.filter(e => e.type === 'text').map(e => e.text).join(''), 'Hello world');
+});
+
+test('empty, malformed, upstream-error and truncated streams never report success', async () => {
+  for (const chunks of [
+    ['data: [DONE]\n\n'],
+    [delta('partial')],
+    [delta('partial'), 'data: broken\n\n', 'data: [DONE]\n\n'],
+    [delta('partial'), 'data: {"error":{"message":"secret"}}\n\n', 'data: [DONE]\n\n'],
+    [delta('<think>only reasoning</think>'), 'data: [DONE]\n\n'],
+  ]) {
+    const events = await relayEvents(chunks);
+    assert.equal(events.at(-1).type, 'error');
+    assert.equal(events.some(e => e.type === 'done'), false);
+    assert.ok(events.at(-1).error);
+  }
+});
+
+test('network splits preserve CRLF, UTF-8 and usage accounting', async () => {
+  const payload = delta('你好 world').replaceAll('\n', '\r\n') + 'data: {"usage":{"total_tokens":3}}\r\n\r\ndata: [DONE]\r\n\r\n';
+  const bytes = new TextEncoder().encode(payload);
+  const stream = new ReadableStream({ start(c) {
+    for (const byte of bytes) c.enqueue(Uint8Array.of(byte));
+    c.close();
+  } });
+  const text = await new Response(relayOpenWeightsStream(stream, 'test')).text();
+  const events = text.trim().split('\n\n').map(line => JSON.parse(line.slice(5)));
+  assert.equal(events[0].text, '你好 world');
+  assert.deepEqual(events.at(-1).usage, { total_tokens: 3 });
+});
+
+test('client cancellation cancels the locked upstream reader', async () => {
+  let cancelled = false;
+  const upstream = new ReadableStream({ cancel() { cancelled = true; } });
+  const reader = relayOpenWeightsStream(upstream, 'test').getReader();
+  await reader.cancel();
+  assert.equal(cancelled, true);
+});
+
+test('/api/run returns a streaming HTTP Response for the local model', async () => {
+  process.env.OPEN_WEIGHTS_URL = 'http://m:11434/v1';
+  globalThis.fetch = async () => new Response(delta('Hello world') + 'data: [DONE]\n\n');
+  const response = await POST(new Request('https://scalvs.test/api/run', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agent: { name: 'A', role: 'Writer' }, task: 'write', stream: true }),
+  }));
+  assert.ok(response instanceof Response);
+  assert.match(response.headers.get('content-type'), /text\/event-stream/);
+  assert.match(await response.text(), /Hello world/);
+});
 afterEach(() => {
   globalThis.fetch = originalFetch;
   for (const k of ['OPEN_WEIGHTS_URL', 'OPEN_WEIGHTS_MODEL', 'OPEN_WEIGHTS_KEY', 'ANTHROPIC_API_KEY']) {

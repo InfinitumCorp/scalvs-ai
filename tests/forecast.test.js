@@ -217,7 +217,8 @@ test('demo forecasts are labelled, charge credits once and never claim a predict
   const { forecast } = await forecaster.startForecast({ question: 'How will buyers react?', seed: SEED });
   assert.equal(forecast.mode, 'demo');
   assert.equal(store.getState().wallet.creditsUsed, 60);
-  await tick(() => forecast.job.status === 'completed');
+  // Six deliberate 900 ms demo pauses take at least 5.4 seconds.
+  await tick(() => forecast.job.status === 'completed', 400);
   assert.match(forecast.job.report, /Demo mode: simulated output/);
   assert.match(forecast.job.report, /not a prediction/);
   assert.equal(store.getState().wallet.creditsUsed, 60);
