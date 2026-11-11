@@ -364,3 +364,47 @@ function complete(runId) {
 export function clearFinished() {
   update((st) => { st.runs = st.runs.filter(isActive); });
 }
+
+// "@scalvs <task>" (or "@scalus"): one answer from the SCALVS agent, which runs on an OpenClaw
+// gateway behind /api/openclaw. Shown as a one-step run so it lives in the same chat thread.
+// Needs the person's Cumulus ID token; the gateway token never leaves the server.
+export const SCALVS_AGENT_ID = 'scalvs-openclaw';
+export function startScalvsAgentRun({ task, opts = {}, token }) {
+  if (typeof task !== 'string' || !task.trim() || task.length > 6000) return { error: 'Enter a task between 1 and 6000 characters.' };
+  if (!token) return { error: 'Sign in with Cumulus ID to use @scalvs.' };
+  const run = {
+    id: uid('run'),
+    title: 'SCALVS agent',
+    task: task.trim(),
+    status: 'running',
+    createdAt: Date.now(),
+    current: 0,
+    steps: [{ agentId: SCALVS_AGENT_ID, name: 'SCALVS agent', status: 'running', output: '', mode: 'live' }],
+    parentId: opts.parentId || undefined,
+    private: opts.private || undefined,
+    attached: [],
+  };
+  update((st) => { st.runs.unshift(run); });
+  const ctrl = new AbortController();
+  controllers.set(run.id, ctrl);
+  (async () => {
+    try {
+      const res = await fetch('api/openclaw', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: run.task }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) throw new Error('Sign in with Cumulus ID to use @scalvs.');
+      if (!res.ok || !data.mention) throw new Error(data.error || 'Write a task after @scalvs.');
+      mutateRun(run.id, (r) => { r.steps[0].status = 'done'; r.steps[0].output = String(data.text || ''); r.status = 'completed'; r.verified = false; r.finishedAt = Date.now(); });
+    } catch (err) {
+      const stopped = ctrl.signal.aborted;
+      mutateRun(run.id, (r) => { r.steps[0].status = stopped ? 'stopped' : 'failed'; r.status = stopped ? 'stopped' : 'failed'; r.finishedAt = Date.now(); if (!stopped) r.error = err.message; });
+    } finally {
+      controllers.delete(run.id);
+    }
+  })();
+  return { run };
+}

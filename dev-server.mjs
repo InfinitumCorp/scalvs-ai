@@ -11,8 +11,9 @@ import * as forecastApi from './api/forecast.js';
 import * as connectorsApi from './api/connectors.js';
 import * as automationsApi from './api/automations.js';
 import { imagine, share } from './api/grok.js';
+import * as scalvsAgentApi from './api/scalvs-agent.js';
 
-const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share } };
+const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share }, '/api/openclaw': scalvsAgentApi };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
