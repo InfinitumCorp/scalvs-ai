@@ -80,6 +80,29 @@ test('/api/run sends the agent step to OpenClaw even when a Claude key is set', 
   assert.equal(seen[0].body.messages[0].role, 'system');
 });
 
+test('a streamed step from OpenClaw is an SSE Response the Worker can forward', async () => {
+  for (const k of VARS) delete process.env[k];
+  process.env.OPENCLAW_URL = 'http://claw:18789/v1';
+  let sent;
+  globalThis.fetch = async (_u, init) => {
+    sent = JSON.parse(init.body);
+    const enc = new TextEncoder();
+    return new Response(new ReadableStream({
+      start(c) {
+        for (const s of ['data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n', 'data: [DONE]\n\n']) c.enqueue(enc.encode(s));
+        c.close();
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } });
+  };
+  const res = await POST(runRequest({ stream: true }));
+  assert.ok(res instanceof Response);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/event-stream/);
+  assert.equal(sent.stream, true);
+  const events = (await res.text()).trim().split('\n\n').map((l) => JSON.parse(l.slice(5)));
+  assert.deepEqual(events.map((e) => e.type), ['text', 'done']);
+});
+
 test('think mode also runs on OpenClaw', async () => {
   for (const k of VARS) delete process.env[k];
   process.env.OPENCLAW_URL = 'http://claw:18789/v1';

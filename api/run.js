@@ -359,7 +359,8 @@ async function runOpenWeights(system, user, stream) {
       }),
     });
     if (!upstream.ok) return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
-    if (stream) return relayOpenWeightsStream(upstream.body, model);
+    // The relay is a bare ReadableStream: wrap it, or the Worker sends an empty body.
+    if (stream) return new Response(relayOpenWeightsStream(upstream.body, model), { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
     const data = await upstream.json();
     const output = openWeightsResultText(data);
     if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
