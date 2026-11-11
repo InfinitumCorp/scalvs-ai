@@ -44,8 +44,9 @@ await step('agent step, not streamed', async () => {
 
 await step('agent step, streamed', async () => {
   const res = await POST(task({ stream: true }), {});
-  check(res.status === 200, `status ${res.status}: ${await res.text()}`);
-  const events = (await res.text()).trim().split('\n\n').filter(Boolean).map((l) => JSON.parse(l.slice(5)));
+  const raw = await res.text();
+  check(res.status === 200, `status ${res.status}: ${raw}`);
+  const events = raw.trim().split('\n\n').filter(Boolean).map((l) => JSON.parse(l.slice(5)));
   const types = events.map((e) => e.type);
   check(!types.includes('error'), `error event: ${JSON.stringify(events.find((e) => e.type === 'error'))}`);
   check(types.includes('text') && types.at(-1) === 'done', `events: ${types.join(',')}`);
