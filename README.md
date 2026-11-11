@@ -27,6 +27,15 @@ The composer shows which mode is active.
 
 Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. A streamed answer counts only when the stream ends with an explicit completion event; provider stream errors, early disconnects and text-less streams fail the step. Approval applies only to the currently pending draft and cannot advance a team twice. **Stop** aborts the in-flight request, marks the run stopped and releases queued steps' credit reservations (the started step keeps its charge); a stopped run cannot be approved or completed afterwards. Runs left `running` by a page reload are stopped on the next load. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
 
+## Search (`#/search`)
+
+Perplexity-style answers from the live web. Ask a question, SCALVS searches, reads the top pages, and streams an answer that cites them as `[1]`, `[2]`, with source cards and follow-up questions. Threads are kept in the browser.
+
+- **Quick** searches once and reads 6 pages. **Pro** has the model plan up to 3 more searches, reads 9 pages and follows the 3 most relevant links on them.
+- The crawler (`api/_crawl.js`) identifies itself as `SCALVS-Search`, obeys `robots.txt` (user agent `scalvs-search`), fetches public `https://` pages only, caps each page at 450 KB, and caches extracted pages for 6 hours. It picks the passages that best match the question (BM25) and drops pages that don't cover it.
+- Search provider, first one configured wins: Brave Search API, Google Programmable Search, or your own SearXNG. With none, it uses the keyless Wikipedia and Hacker News APIs.
+- `POST /api/search {q, depth, history}` streams `status`, `queries`, `sources`, `text`, `related`, `done` events. It needs a model (any engine above).
+
 ## Connectors
 
 `api/connectors.js` (Worker routes `/api/connectors/*` and `/api/oauth/callback`) connects real accounts; agents then call the tools during runs (`api/run.js` tool loop, on Claude or Workers AI).
@@ -125,6 +134,9 @@ Set secrets with `npx wrangler secret put <NAME>`, or put them in a git-ignored 
 | `OPENCLAW_URL` | var | OpenClaw gateway URL (`…/v1`). When set, agents run on OpenClaw. See [docs/openclaw.md](docs/openclaw.md). |
 | `OPENCLAW_TOKEN` | secret | OpenClaw gateway token (full operator access to that gateway). |
 | `OPENCLAW_AGENT` / `OPENCLAW_MODEL` | var | Optional agent target (default `openclaw/default`) and provider model override. |
+| `BRAVE_SEARCH_API_KEY` | secret | Optional. Brave Search API key for Search and DeepSearch (free tier). |
+| `GOOGLE_CSE_KEY` / `GOOGLE_CSE_CX` | secret / var | Optional. Google Programmable Search key and engine id (100 free queries a day). |
+| `SEARXNG_URL` | var | Optional. Your own SearXNG with `format=json` enabled. With none of these, Search uses Wikipedia + Hacker News. |
 | `CONJURE_URL` | var | CONJURE™ engine base URL. Must be private or behind a token-checking proxy. |
 | `CONJURE_TOKEN` | secret | Token for that proxy. |
 

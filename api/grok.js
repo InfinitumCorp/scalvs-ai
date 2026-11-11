@@ -5,7 +5,8 @@
 //   Imagine     POST /api/imagine {prompt} -> {image: data URL}
 //   Share       POST /api/share {title, task, steps} -> {id};  GET /api/share?id= -> snapshot
 
-import { cfg, checkUrl, kv as vaultKv, randomId } from './_vault.js';
+import { cfg, kv as vaultKv, randomId } from './_vault.js';
+import { crawl, terms } from './_crawl.js';
 
 export const THINK_MODEL = '@cf/qwen/qwq-32b';
 export const VISION_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
@@ -21,64 +22,81 @@ const strip = (html) => html
   .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/\s+/g, ' ').trim();
 
-async function getText(url, ms = 6000) {
-  const res = await fetch(url, { headers: { 'user-agent': UA, accept: 'text/html,application/json' }, signal: AbortSignal.timeout(ms) });
+
+// Web search providers. Configured ones are tried in order: Brave Search API
+// (BRAVE_SEARCH_API_KEY, free tier), Google Programmable Search (GOOGLE_CSE_KEY +
+// GOOGLE_CSE_CX, 100 free queries a day), or a self-hosted SearXNG (SEARXNG_URL,
+// open-source metasearch with format=json enabled). With none of them, or when
+// they return too little, the keyless public APIs answer: Wikipedia, plus Hacker
+// News (Algolia), whose stories link to articles across the web. DuckDuckGo's HTML
+// page is no longer used: it answers automated requests with a bot challenge.
+const httpsOnly = (hits) => hits.filter((r) => /^https:\/\//.test(r.url || ''));
+const getJson = async (url, init = {}) => {
+  const res = await fetch(url, { ...init, headers: { 'user-agent': UA, accept: 'application/json', ...(init.headers || {}) }, signal: AbortSignal.timeout(6000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.text();
-}
+  return res.json();
+};
 
-// Brave Search API when BRAVE_SEARCH_API_KEY is set (free tier: 2,000 queries/month,
-// https://brave.com/search/api/). Otherwise DuckDuckGo's HTML endpoint, requested
-// with an honest bot user agent (it may refuse requests from cloud servers), and
-// Wikipedia's API as a fallback that always answers.
 async function braveSearch(query, limit, key) {
-  const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`, {
-    headers: { accept: 'application/json', 'x-subscription-token': key }, signal: AbortSignal.timeout(6000),
-  });
-  if (!res.ok) throw new Error(`Brave ${res.status}`);
-  const data = await res.json();
-  return (data.web?.results || []).map((r) => ({ title: strip(r.title || ''), url: r.url, snippet: strip(r.description || '') }))
-    .filter((r) => /^https:\/\//.test(r.url));
+  const data = await getJson(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`, { headers: { 'x-subscription-token': key } });
+  return httpsOnly((data.web?.results || []).map((r) => ({ title: strip(r.title || ''), url: r.url, snippet: strip(r.description || '') })));
+}
+async function googleSearch(query, limit, key, cx) {
+  const data = await getJson(`https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(key)}&cx=${encodeURIComponent(cx)}&num=${Math.min(limit, 10)}&q=${encodeURIComponent(query)}`);
+  return httpsOnly((data.items || []).map((r) => ({ title: strip(r.title || ''), url: r.link, snippet: strip(r.snippet || '') })));
+}
+async function searxngSearch(query, limit, base) {
+  const data = await getJson(`${base.replace(/\/$/, '')}/search?format=json&q=${encodeURIComponent(query)}`);
+  return httpsOnly((data.results || []).slice(0, limit).map((r) => ({ title: strip(r.title || ''), url: r.url, snippet: strip(r.content || '') })));
+}
+async function wikipediaSearch(query, limit) {
+  const data = await getJson(`https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${limit}&srsearch=${encodeURIComponent(query)}`);
+  return (data.query?.search || []).map((r) => ({ title: r.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`, snippet: strip(r.snippet || '') }));
+}
+// Algolia requires every word by default; optionalWords lets any keyword match, ranked.
+async function hackerNewsSearch(query, limit) {
+  const q = encodeURIComponent(query);
+  const data = await getJson(`https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=${limit * 2}&query=${q}&optionalWords=${q}`);
+  const seen = new Set();
+  return httpsOnly((data.hits || []).filter((h) => h.url && !seen.has(h.url) && seen.add(h.url))
+    .map((h) => ({ title: strip(h.title || ''), url: h.url, snippet: '' }))).slice(0, limit);
 }
 
-async function searchWeb(query, limit = 6, env = {}) {
-  const key = cfg(env, 'BRAVE_SEARCH_API_KEY');
-  if (key) {
-    try { const hits = await braveSearch(query, limit, key); if (hits.length) return hits; } catch { /* fall back */ }
-  }
-  const hits = [];
+export function searchEngine(env) {
+  if (cfg(env, 'BRAVE_SEARCH_API_KEY')) return 'brave';
+  if (cfg(env, 'GOOGLE_CSE_KEY') && cfg(env, 'GOOGLE_CSE_CX')) return 'google';
+  if (cfg(env, 'SEARXNG_URL')) return 'searxng';
+  return 'open';
+}
+
+export async function searchWeb(query, limit = 6, env = {}) {
+  const engine = searchEngine(env);
   try {
-    const html = await getText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
-    const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-    let m;
-    while ((m = re.exec(html)) && hits.length < limit) {
-      let url = m[1].replace(/&amp;/g, '&');
-      const u = url.match(/[?&]uddg=([^&]+)/);
-      if (u) url = decodeURIComponent(u[1]);
-      if (url.startsWith('//')) url = `https:${url}`;
-      if (!/^https:\/\//.test(url) || /duckduckgo\.com\/y\.js/.test(url)) continue;
-      hits.push({ title: strip(m[2]), url, snippet: strip(m[3]) });
-    }
-  } catch { /* fall through */ }
-  if (hits.length < 3) {
-    try {
-      const data = JSON.parse(await getText(`https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${limit}&srsearch=${encodeURIComponent(query)}`));
-      for (const r of data.query?.search || []) {
-        if (hits.length >= limit) break;
-        hits.push({ title: r.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`, snippet: strip(r.snippet) });
-      }
-    } catch { /* no results */ }
+    const hits = engine === 'brave' ? await braveSearch(query, limit, cfg(env, 'BRAVE_SEARCH_API_KEY'))
+      : engine === 'google' ? await googleSearch(query, limit, cfg(env, 'GOOGLE_CSE_KEY'), cfg(env, 'GOOGLE_CSE_CX'))
+      : engine === 'searxng' ? await searxngSearch(query, limit, cfg(env, 'SEARXNG_URL'))
+      : [];
+    if (hits.length >= 3) return hits;
+  } catch { /* fall back to the keyless APIs */ }
+  // Keyword search engines: a full sentence finds little, its keywords find more.
+  const keywords = terms(query).slice(0, 8).join(' ') || query;
+  const [wiki, hn] = await Promise.all([
+    wikipediaSearch(keywords, limit).catch(() => []),
+    hackerNewsSearch(keywords, Math.ceil(limit / 2)).catch(() => []),
+  ]);
+  const out = [];
+  for (let i = 0; out.length < limit && i < limit; i++) {
+    if (wiki[i]) out.push(wiki[i]);
+    if (hn[i] && out.length < limit) out.push(hn[i]);
   }
-  return hits;
+  return out;
 }
 
-// Searches, reads the top pages in parallel, and returns sources with excerpts.
-export async function deepSearch(env, query, { pages = 4 } = {}) {
-  const hits = await searchWeb(query.slice(0, 300), 6, env);
-  const read = await Promise.all(hits.slice(0, pages).map(async (h) => {
-    try { checkUrl(h.url, env); return { ...h, text: strip(await getText(h.url)).slice(0, 3500) }; } catch { return { ...h, text: h.snippet }; }
-  }));
-  return [...read, ...hits.slice(pages).map((h) => ({ ...h, text: h.snippet }))];
+// Searches, crawls the top pages (robots.txt-aware, see _crawl.js) and returns
+// sources with the passages that best match the question.
+export async function deepSearch(env, query) {
+  const sources = await crawl({ env, question: query, depth: 'quick', search: searchWeb });
+  return sources.map((s) => ({ title: s.title, url: s.url, snippet: s.snippet, text: s.excerpt }));
 }
 
 export function sourcesBlock(sources) {

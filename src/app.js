@@ -10,10 +10,11 @@ import * as earnings from './views/earnings.js';
 import * as forecast from './views/forecast.js';
 import * as automations from './views/automations.js';
 import * as shared from './views/shared.js';
+import * as search from './views/search.js';
 import { checkForecastLive, resumeForecasts } from './forecaster.js';
 import './firm/firm-suite.js'; // FIRM Suite embed (<firm-suite>), canonical copy from infinitum-nexus
 
-const ROUTES = { command, studio, connect, forecast, earnings, automations, shared };
+const ROUTES = { command, search, studio, connect, forecast, earnings, automations, shared };
 const main = document.getElementById('main');
 let current = null;
 let root = null;

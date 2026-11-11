@@ -12,8 +12,9 @@ import * as connectorsApi from './api/connectors.js';
 import * as automationsApi from './api/automations.js';
 import { imagine, share } from './api/grok.js';
 import * as scalvsAgentApi from './api/scalvs-agent.js';
+import * as searchApi from './api/search.js';
 
-const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share }, '/api/openclaw': scalvsAgentApi };
+const APIS = { '/api/run': runApi, '/api/forecast': forecastApi, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share }, '/api/openclaw': scalvsAgentApi, '/api/search': searchApi };
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
