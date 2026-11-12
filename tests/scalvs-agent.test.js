@@ -61,21 +61,64 @@ test('is off until configured and says how to connect', async () => {
   assert.match((await res.json()).error, /OPENCLAW_GATEWAY_URL/);
 });
 
-test('the Cumulus ID verifier asks the issuer and caches the answer', async () => {
-  let calls = 0;
+const ISSUER = 'https://id.cumuluscloud.app/realms/cumulus';
+const b64url = (bytes) => Buffer.from(bytes).toString('base64url');
+async function issuer() {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'k1', use: 'sig', alg: 'ES256' };
+  const sign = async (over = {}, header = {}) => {
+    const now = Math.floor(Date.now() / 1000);
+    const claims = { iss: ISSUER, aud: 'scalvs', sub: 'cid_7c1e', client_id: 'scalvs', sid: 's1', iat: now, exp: now + 600, ...over };
+    const h = b64url(JSON.stringify({ alg: 'ES256', typ: 'at+jwt', kid: 'k1', ...header }));
+    const p = b64url(JSON.stringify(claims));
+    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, pair.privateKey, new TextEncoder().encode(`${h}.${p}`));
+    return `${h}.${p}.${b64url(new Uint8Array(sig))}`;
+  };
+  return { jwk, sign };
+}
+
+test('the Cumulus://ID verifier checks the token against the JWKS, then userinfo, and caches', async () => {
+  const { jwk, sign } = await issuer();
+  const calls = [];
   const v = createCidVerifier({
-    issuer: 'https://id.test/',
     fetch: async (url, init) => {
-      calls++;
-      assert.equal(url, 'https://id.test/api/id/userinfo');
-      return init.headers.authorization === 'Bearer good' ? new Response(JSON.stringify({ cid: 'cid_1' })) : new Response('{}', { status: 401 });
+      calls.push(url);
+      if (url === `${ISSUER}/protocol/openid-connect/certs`) return new Response(JSON.stringify({ keys: [jwk] }));
+      assert.equal(url, `${ISSUER}/protocol/openid-connect/userinfo`);
+      return init.headers.authorization.startsWith('Bearer ey') ? new Response(JSON.stringify({ sub: 'cid_7c1e', cid: 'cid_7c1e' })) : new Response('{}', { status: 401 });
     },
   });
-  assert.equal(await v('good'), 'cid_1');
-  assert.equal(await v('good'), 'cid_1');
-  assert.equal(calls, 1);
-  assert.equal(await v('bad'), null);
+  const good = await sign();
+  assert.equal(await v(good), 'cid_7c1e');
+  assert.equal(await v(good), 'cid_7c1e');
+  assert.deepEqual(calls, [`${ISSUER}/protocol/openid-connect/certs`, `${ISSUER}/protocol/openid-connect/userinfo`]);
   assert.equal(await v(''), null);
+  assert.equal(await v('opaque'), null);
+});
+
+test('the Cumulus://ID verifier refuses another issuer, client, type, key, expiry or subject', async () => {
+  const { jwk, sign } = await issuer();
+  let userinfo = 0;
+  const fetch = async (url) => {
+    if (url.endsWith('/certs')) return new Response(JSON.stringify({ keys: [jwk] }));
+    userinfo++;
+    return new Response(JSON.stringify({ sub: 'cid_7c1e' }));
+  };
+  const v = createCidVerifier({ fetch });
+  assert.equal(await v(await sign({ iss: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_x' })), null);
+  assert.equal(await v(await sign({ aud: 'cumulus-cloud' })), null);
+  assert.equal(await v(await sign({}, { typ: 'JWT' })), null);
+  assert.equal(await v(await sign({ exp: Math.floor(Date.now() / 1000) - 3600 })), null);
+  assert.equal(await v(await sign({ sub: 'someone' })), null);
+  assert.equal(await v(await (await issuer()).sign()), null);
+  const tampered = (await sign()).split('.');
+  tampered[1] = b64url(JSON.stringify({ iss: ISSUER, aud: 'scalvs', sub: 'cid_other', exp: 9e9 }));
+  assert.equal(await v(tampered.join('.')), null);
+  assert.equal(userinfo, 0, 'nothing that fails offline checks reaches userinfo');
+  const revoked = createCidVerifier({ fetch: async (url) => (url.endsWith('/certs') ? new Response(JSON.stringify({ keys: [jwk] })) : new Response('{}', { status: 401 })) });
+  assert.equal(await revoked(await sign()), null);
+  const other = createCidVerifier({ fetch: async (url) => new Response(JSON.stringify(url.endsWith('/certs') ? { keys: [jwk] } : { sub: 'cid_someone_else' })) });
+  assert.equal(await other(await sign()), null);
 });
 
 test('also reads the OPENCLAW_URL / OPENCLAW_TOKEN pair that agent runs use', async () => {
