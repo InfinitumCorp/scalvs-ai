@@ -14,8 +14,10 @@ function seed() {
   const writer = TEMPLATES[1];
   return {
     plan: 'free',
-    // Billing org for real plans (src/billing.js): { orgId, apiKey, email } once created.
+    // Legacy billing org from the old email sign-up ({ orgId, apiKey, email }). New billing uses Cumulus ID.
     billing: null,
+    // Last SCALVS.ai entitlement from the revenue API: { plan, status, seats } (src/billing.js).
+    subscription: null,
     agents: [
       {
         id: uid('agt'), name: 'Atlas', template: researcher.id, role: researcher.role,
@@ -90,9 +92,9 @@ export function subscribe(fn) {
 
 export function reset() {
   // Keep the billing account and paid plan: resetting prototype data must not orphan a subscription.
-  const { billing, plan } = state;
+  const { billing, plan, subscription } = state;
   state = seed();
-  if (billing) Object.assign(state, { billing, plan });
+  Object.assign(state, { billing, plan, subscription });
   persist();
   listeners.forEach((fn) => fn(state));
 }
