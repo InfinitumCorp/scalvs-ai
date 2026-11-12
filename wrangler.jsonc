@@ -24,7 +24,11 @@
   "ai": { "binding": "AI" },
   // The account-wide free Workers AI ledger, owned by the conjure-llm Worker.
   "durable_objects": { "bindings": [{ "name": "AI_BUDGET", "class_name": "Budget", "script_name": "conjure-llm" }] },
-  "vars": { "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+  "vars": {
+    "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    // SCALVS Search asks VEIL Search (Infinitum's own engine, no key) first.
+    "VEIL_SEARCH_URL": "https://infinitumveil.app/api/search"
+  },
   // Per-IP cap on API POSTs (worker.js).
   "ratelimits": [
     { "name": "API_LIMIT", "namespace_id": "1701", "simple": { "limit": 60, "period": 60 } }
