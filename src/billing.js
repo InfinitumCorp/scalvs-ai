@@ -1,13 +1,15 @@
 // Real plans and payments for SCALVS.ai, through the Infinitum revenue API
-// (Stripe Checkout and the Stripe customer portal). The app never sees card
-// details or Stripe keys: it holds this browser's billing-org API key, which
-// only manages that org's own subscription.
+// (Stripe Checkout and the Stripe customer portal). The app never holds a Stripe
+// key and never sees card details: it sends the signed-in user's Cumulus ID access
+// token to the revenue API, which returns a Checkout or portal URL to open.
 
-export const REVENUE_URL = 'https://infinitum-revenue.infinitumcorp.workers.dev';
+import { REVENUE_URL as CONFIGURED_URL } from './config.js';
 
-/** App plan id -> revenue catalog plan id. Government is sold by contract. */
-export const REVENUE_PLAN = { pro: 'scalvs_pro', business: 'scalvs_team' };
-const FROM_REVENUE = { scalvs_free: 'free', scalvs_pro: 'pro', scalvs_team: 'business', scalvs_private: 'government' };
+export const REVENUE_URL = String(CONFIGURED_URL || 'https://infinitum-revenue.infinitumcorp.workers.dev').replace(/\/+$/, '');
+export const PRODUCT = 'scalvs';
+
+/** Revenue catalog plan id -> this app's plan id (src/data.js PLANS). */
+export const FROM_REVENUE = { scalvs_free: 'free', scalvs_pro: 'pro', scalvs_team: 'business', scalvs_private: 'government' };
 const PAID = new Set(['trialing', 'active', 'past_due', 'bundled']);
 
 export class BillingError extends Error {
@@ -18,10 +20,13 @@ export class BillingError extends Error {
   }
 }
 
-async function call(fetchFn, method, path, { key, body } = {}) {
+/** The signed-in user's Cumulus ID access token (public/cumulus-id.js), or null. */
+export const cidToken = () => (typeof window !== 'undefined' && window.CumulusID?.token?.()) || null;
+
+async function call(fetchFn, method, path, { token, body } = {}) {
   const headers = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
-  if (key) headers.authorization = `Bearer ${key}`;
+  if (token) headers.authorization = `Bearer ${token}`;
   let res;
   try {
     res = await fetchFn(`${REVENUE_URL}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -29,55 +34,64 @@ async function call(fetchFn, method, path, { key, body } = {}) {
     throw new BillingError(0, 'network', 'Billing is unreachable. Check your connection and try again.');
   }
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new BillingError(res.status, json?.error?.code ?? 'http_error', json?.error?.message ?? 'Billing request failed.');
+  if (!res.ok) throw new BillingError(res.status, json?.error?.code ?? 'http_error', json?.error?.message ?? `Billing request failed (${res.status}).`);
   return json;
 }
 
-export const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email ?? '').trim());
+const needToken = (token) => {
+  if (!token) throw new BillingError(401, 'signed_out', 'Sign in with Cumulus ID to manage your plan.');
+  return token;
+};
 
-/** The SCALVS.ai plan this org is on, from revenue entitlements. Unpaid subscriptions fall back to Free. */
-export function planFromEntitlements(ent) {
-  const p = ent?.products?.find((x) => x.product === 'scalvs');
+/** True for plans an individual account can't buy (Team): the account must switch to business first. */
+export const businessOnly = (plan) => Array.isArray(plan?.allowedKinds) && !plan.allowedKinds.includes('individual');
+
+/** "$29 / month", "$49 / month per seat", "Free". */
+export function formatPrice(plan) {
+  if (!plan?.priceCents) return 'Free';
+  const n = (plan.priceCents / 100).toLocaleString('en-US', { minimumFractionDigits: plan.priceCents % 100 ? 2 : 0 });
+  return `$${n} / ${plan.interval || 'month'}${plan.perSeat ? ' per seat' : ''}`;
+}
+
+/** SCALVS.ai plans from the public catalog, cheapest first. Contract-only plans are left out. */
+export async function loadCatalog({ fetch: fetchFn = globalThis.fetch } = {}) {
+  const { plans = [] } = await call(fetchFn, 'GET', '/v1/catalog');
+  return plans.filter((p) => p.product === PRODUCT && p.channel !== 'contract').sort((a, b) => a.priceCents - b.priceCents);
+}
+
+/** This user's SCALVS.ai entitlement ({ plan, status, seats, ... }) or null. */
+export async function loadEntitlement({ token = cidToken(), fetch: fetchFn = globalThis.fetch } = {}) {
+  const ent = await call(fetchFn, 'GET', '/v1/me/entitlements', { token: needToken(token) });
+  return ent?.products?.find((x) => x.product === PRODUCT) ?? null;
+}
+
+/** The app plan id ('free' | 'pro' | 'business' | 'government') for an entitlement. Unpaid subscriptions fall back to Free. */
+export function planFromEntitlement(p) {
   if (!p) return 'free';
   if (p.plan !== 'scalvs_free' && !PAID.has(p.status)) return 'free';
   return FROM_REVENUE[p.plan] ?? 'free';
 }
 
-/** Where Stripe sends people back: this app's root, which reads ?billing= on load. */
+/** Where Stripe and the portal send people back: this app's root, which reads ?billing= on load. */
 export const returnUrl = (origin) => `${origin}/`;
 
-/**
- * Starts Stripe Checkout for a paid plan. Creates the billing org on first use.
- * Returns the (possibly new) billing record to persist and the Checkout URL to open.
- */
-export async function startUpgrade({ billing, planId, email, origin, fetch: fetchFn = globalThis.fetch }) {
-  const target = REVENUE_PLAN[planId];
-  if (!target) throw new BillingError(400, 'contact_sales', 'Government plans are sold by contract. Contact Infinitum sales.');
-  let b = billing;
-  if (!b?.apiKey) {
-    if (!validEmail(email)) throw new BillingError(400, 'email_required', 'Enter a billing email to continue.');
-    const clean = email.trim();
-    const org = await call(fetchFn, 'POST', '/v1/signup', {
-      body: { name: clean, email: clean, kind: planId === 'business' ? 'business' : 'individual' },
-    });
-    b = { orgId: org.orgId, apiKey: org.apiKey, email: clean };
-  }
-  const session = await call(fetchFn, 'POST', '/v1/subscriptions/checkout', {
-    key: b.apiKey, body: { planId: target, returnUrl: returnUrl(origin) },
-  });
-  return { billing: b, url: session.url };
+/** Switches the signed-in user's billing account to a business (needed for Team). */
+export async function switchToBusiness({ name, token = cidToken(), fetch: fetchFn = globalThis.fetch }) {
+  const clean = String(name ?? '').trim();
+  if (!clean) throw new BillingError(400, 'name_required', 'Enter your business name to continue.');
+  return call(fetchFn, 'POST', '/v1/me/org', { token: needToken(token), body: { name: clean.slice(0, 200), kind: 'business' } });
+}
+
+/** Starts Stripe Checkout for a catalog plan. Returns the Checkout URL to open. */
+export async function startCheckout({ planId, quantity, origin, token = cidToken(), fetch: fetchFn = globalThis.fetch }) {
+  const body = { planId, returnUrl: returnUrl(origin) };
+  if (quantity && quantity > 1) body.quantity = Math.min(10000, Math.floor(quantity));
+  return (await call(fetchFn, 'POST', '/v1/subscriptions/checkout', { token: needToken(token), body })).url;
 }
 
 /** Stripe customer portal: change or cancel the plan, update cards, download invoices. */
-export async function openPortal({ billing, origin, fetch: fetchFn = globalThis.fetch }) {
-  if (!billing?.apiKey) throw new BillingError(400, 'no_account', 'No billing account yet.');
-  return (await call(fetchFn, 'POST', '/v1/billing/portal', { key: billing.apiKey, body: { returnUrl: returnUrl(origin) } })).url;
-}
-
-/** Current plan from the revenue API. */
-export async function syncPlan({ billing, fetch: fetchFn = globalThis.fetch }) {
-  if (!billing?.apiKey) return 'free';
-  return planFromEntitlements(await call(fetchFn, 'GET', '/v1/me/entitlements', { key: billing.apiKey }));
+export async function openPortal({ origin, token = cidToken(), fetch: fetchFn = globalThis.fetch }) {
+  return (await call(fetchFn, 'POST', '/v1/billing/portal', { token: needToken(token), body: { returnUrl: returnUrl(origin) } })).url;
 }
 
 /** 'success' | 'cancelled' | null, from the query string Stripe returns with. */
