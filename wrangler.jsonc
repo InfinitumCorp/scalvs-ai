@@ -6,6 +6,8 @@
   "name": "scalvs-ai",
   "main": "worker.js",
   "compatibility_date": "2026-11-01",
+  // Global users run on US servers (Ashburn, Virginia); Russia is served by the ru.* copies on Yandex Cloud.
+  "placement": { "region": "gcp:us-east4" },
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   // Production domains (zone scalvs.app is on this Cloudflare account).
