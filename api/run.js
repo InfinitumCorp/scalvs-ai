@@ -53,7 +53,7 @@ async function openWeightsGenerate({ env, system, user, think }) {
 }
 
 // One non-streamed answer, with optional images (vision) and reasoning (think).
-async function generate({ env, key, system, user, images = [], think = false }) {
+export async function generate({ env, key, system, user, images = [], think = false }) {
   if (hasOpenClaw() && !images.length) return openWeightsGenerate({ env, system, user, think });
   if (key) {
     const content = [...images.map((d) => {
@@ -382,6 +382,32 @@ async function runWorkersAi(env, system, user, stream) {
     const output = resultText(result).trim();
     if (!output) return json({ error: 'The model returned no text. Please retry.' }, 502);
     return json({ mode: 'live', model, output, usage: result?.usage || null });
+  } catch {
+    return json({ error: 'The model request could not complete. Please retry.' }, 502);
+  }
+}
+
+// One streamed answer to a system + user prompt, on the same engine order as POST
+// (OpenClaw, Claude, Workers AI, open weights). Returns a Response carrying the
+// minimal SSE contract ({type:"text"|"done"|"error"}), or a JSON error Response.
+// Used by /api/search.
+export async function streamCompletion({ env, system, user, signal, maxTokens = 1500 }) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (hasOpenClaw()) return runOpenWeights(system, user, true);
+  if (!key) {
+    if (hasWorkersAi(env)) return runWorkersAi(env, system, user, true);
+    if (hasOpenWeights()) return runOpenWeights(system, user, true);
+    return json({ mode: 'demo', error: 'No model is configured' }, 503);
+  }
+  try {
+    const upstream = await fetch(apiUrl(), {
+      method: 'POST',
+      signal: combineSignals(signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)),
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: process.env.SCALVS_MODEL || DEFAULT_MODEL, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content: user }] }),
+    });
+    if (!upstream.ok) return json({ error: `Model request failed (${upstream.status}). Please retry.` }, 502);
+    return relayStream(upstream);
   } catch {
     return json({ error: 'The model request could not complete. Please retry.' }, 502);
   }
