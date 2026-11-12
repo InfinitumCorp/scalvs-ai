@@ -49,6 +49,12 @@ async function searxngSearch(query, limit, base) {
   const data = await getJson(`${base.replace(/\/$/, '')}/search?format=json&q=${encodeURIComponent(query)}`);
   return httpsOnly((data.results || []).slice(0, limit).map((r) => ({ title: strip(r.title || ''), url: r.url, snippet: strip(r.content || '') })));
 }
+// VEIL Search (infinitumveil.app/api/search): Infinitum's own engine, VEILBot's index blended with
+// the web APIs VEIL holds keys for. No key here; the query goes in the POST body, never a URL.
+async function veilSearch(query, limit, url) {
+  const data = await getJson(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ q: query }) });
+  return httpsOnly((data.results || []).slice(0, limit * 2).map((r) => ({ title: strip(r.title || ''), url: r.url, snippet: strip(r.snippet || '') }))).slice(0, limit);
+}
 async function wikipediaSearch(query, limit) {
   const data = await getJson(`https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${limit}&srsearch=${encodeURIComponent(query)}`);
   return (data.query?.search || []).map((r) => ({ title: r.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`, snippet: strip(r.snippet || '') }));
@@ -63,6 +69,7 @@ async function hackerNewsSearch(query, limit) {
 }
 
 export function searchEngine(env) {
+  if (/^https:\/\//.test(cfg(env, 'VEIL_SEARCH_URL') || '')) return 'veil';
   if (cfg(env, 'BRAVE_SEARCH_API_KEY')) return 'brave';
   if (cfg(env, 'GOOGLE_CSE_KEY') && cfg(env, 'GOOGLE_CSE_CX')) return 'google';
   if (cfg(env, 'SEARXNG_URL')) return 'searxng';
@@ -72,7 +79,8 @@ export function searchEngine(env) {
 export async function searchWeb(query, limit = 6, env = {}) {
   const engine = searchEngine(env);
   try {
-    const hits = engine === 'brave' ? await braveSearch(query, limit, cfg(env, 'BRAVE_SEARCH_API_KEY'))
+    const hits = engine === 'veil' ? await veilSearch(query, limit, cfg(env, 'VEIL_SEARCH_URL'))
+      : engine === 'brave' ? await braveSearch(query, limit, cfg(env, 'BRAVE_SEARCH_API_KEY'))
       : engine === 'google' ? await googleSearch(query, limit, cfg(env, 'GOOGLE_CSE_KEY'), cfg(env, 'GOOGLE_CSE_CX'))
       : engine === 'searxng' ? await searxngSearch(query, limit, cfg(env, 'SEARXNG_URL'))
       : [];
