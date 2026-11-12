@@ -136,6 +136,7 @@ Set secrets with `npx wrangler secret put <NAME>`, or put them in a git-ignored 
 | `OPENCLAW_AGENT` / `OPENCLAW_MODEL` | var | Optional agent target (default `openclaw/default`) and provider model override. |
 | `BRAVE_SEARCH_API_KEY` | secret | Optional. Brave Search API key for Search and DeepSearch (free tier). |
 | `GOOGLE_CSE_KEY` / `GOOGLE_CSE_CX` | secret / var | Optional. Google Programmable Search key and engine id (100 free queries a day). |
+| `VEIL_SEARCH_URL` | var | Optional. `https://infinitumveil.app/api/search`: VEIL Search, Infinitum's own engine (no key). Used first when set. |
 | `SEARXNG_URL` | var | Optional. Your own SearXNG with `format=json` enabled. With none of these, Search uses Wikipedia + Hacker News. |
 | `CONJURE_URL` | var | CONJURE™ engine base URL. Must be private or behind a token-checking proxy. |
 | `CONJURE_TOKEN` | secret | Token for that proxy. |
