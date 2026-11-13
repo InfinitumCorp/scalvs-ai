@@ -15,7 +15,7 @@
     "dist:linux": "electron-builder --linux --x64 --arm64"
   },
   "devDependencies": {
-    "electron": "33.2.1",
+    "electron": "42.11.16",
     "electron-builder": "25.1.8"
   },
   "build": {
