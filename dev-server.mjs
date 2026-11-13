@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { browserConfig } from './scripts/browser-config.mjs';
 import * as runApi from './api/run.js';
 import * as forecastApi from './api/forecast.js';
 import * as connectorsApi from './api/connectors.js';
@@ -57,6 +58,10 @@ createServer(async (req, res) => {
     const urlPath = url.pathname.replace(/\/+$/, '/');
     let path = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, '');
     if (path === '/' || path === '\\') path = '/index.html';
+    if (url.pathname === '/src/config.js') {
+      res.writeHead(200, { 'content-type': TYPES['.js'] }).end(browserConfig());
+      return;
+    }
     const file = join(ROOT, path);
     if (!file.startsWith(ROOT) || !(await stat(file)).isFile()) throw new Error('not found');
     res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream' });
