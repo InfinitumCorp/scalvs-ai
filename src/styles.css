@@ -65,7 +65,10 @@ sup.tm { font-size: .38em; vertical-align: super; line-height: 0; margin-left: .
 .account:hover { background: var(--hover); }
 .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--soft); border: 1px solid var(--line); display: grid; place-items: center; font-size: 12px; font-weight: 400; }
 
-.topbar { display: none; }
+/* Desktop: the top bar carries only the Cumulus://ID account bar at the right (the sidebar has the brand and menu). */
+.topbar { display: flex; align-items: center; justify-content: flex-end; padding: 12px 24px 0; }
+@media (min-width: 861px) { .topbar .icon-btn, .topbar .brand-sm { display: none; } }
+.cumulus-bar { display: inline-flex; align-items: center; margin-inline-start: auto; max-width: 100%; }
 .scrim { display: none; }
 
 /* ---------- type ---------- */
@@ -271,6 +274,7 @@ button.chip:hover { border-color: var(--line); }
   body.nav-open .scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.2); z-index: 20; }
   .shell { margin-inline-start: 0; }
   .topbar { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; background: #fff; border-bottom: 1px solid var(--line); padding: 8px 10px; z-index: 10; }
+  .topbar { flex-wrap: wrap; justify-content: flex-start; }
   .brand-sm { text-decoration: none; }
   .brand-sm .wordmark { font-size: 19px; }
   h1 { font-size: 34px; }
