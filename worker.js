@@ -8,15 +8,23 @@ import * as forecast from './api/forecast.js';
 import * as connectors from './api/connectors.js';
 import * as automations from './api/automations.js';
 import { imagine, share } from './api/grok.js';
+import * as scalvsAgent from './api/scalvs-agent.js';
+import * as search from './api/search.js';
+import { budgetedAI, FreeAllowanceUsed } from './api/_ai-budget.js';
 
-const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share } };
+// Every Workers AI call on the account is charged to one shared ledger (the conjure-llm
+// Worker's Budget Durable Object), so usage stays inside the free 10,000 neurons a day.
+const withBudget = (env, ctx) => (env.AI && env.AI_BUDGET ? { ...env, AI: budgetedAI(env.AI, env.AI_BUDGET, { waitUntil: ctx?.waitUntil?.bind(ctx) }) } : env);
+
+const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share }, '/api/openclaw': scalvsAgent, '/api/search': search };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, rawEnv, ctx) {
+    const env = withBudget(rawEnv, ctx);
     const { pathname } = new URL(request.url);
     const isConnectors = pathname.startsWith('/api/connectors') || pathname === '/api/oauth/callback';
     const isAutomations = pathname.startsWith('/api/automations');
@@ -36,7 +44,15 @@ export default {
         });
       }
     }
-    const response = await handler(request, env);
+    let response;
+    try {
+      response = await handler(request, env, ctx);
+    } catch (err) {
+      if (!(err instanceof FreeAllowanceUsed)) throw err;
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 429, headers: { ...SECURITY_HEADERS, 'content-type': 'application/json' },
+      });
+    }
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
     // redirects (OAuth) keep their Location; Response.redirect headers are immutable, so copy
@@ -44,6 +60,6 @@ export default {
   },
   // Cron (wrangler.jsonc triggers.crons): run due automations.
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(automations.runDue(env));
+    ctx.waitUntil(automations.runDue(withBudget(env, ctx)));
   },
 };

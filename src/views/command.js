@@ -1,6 +1,7 @@
 import { getState } from '../store.js';
 import { TEMPLATES } from '../data.js';
-import { startRun, approve, reject, stopRun, isLive, mediaFor, chainOf } from '../runner.js';
+import { startRun, approve, reject, stopRun, isLive, mediaFor, chainOf, startScalvsAgentRun, SCALVS_AGENT_ID } from '../runner.js';
+import { mentionIn, conjureQuestion } from '../mentions.js';
 import { update, uid } from '../store.js';
 import { MODES, PERSONALITIES, composerExtras, bindExtras, takeAttachments, attachState, shareRun, speak, createAutomation } from '../grok.js';
 import { esc, md, statusLabel, toast } from '../ui.js';
@@ -156,13 +157,33 @@ export function bind(root, rerender) {
     const fd = new FormData(e.target);
     const task = String(fd.get('task')).trim();
     if (!task) return;
+    const cidToken = () => (typeof window !== 'undefined' && window.CumulusID?.token?.()) || '';
+    const mention = mentionIn(task);
+    // "@conjure <question>": Conjure prediction modeling, in Forecasts.
+    if (mention === 'conjure') {
+      const question = conjureQuestion(task);
+      if (!question) { toast('Write a question after @conjure.'); return; }
+      setDraft({ seed: '', question, product: 'SCALVS.ai' });
+      taskDraft = '';
+      location.hash = '#/forecast';
+      return;
+    }
+    const open = selectedRun();
+    const followUp = open && open.status !== 'running' && open.status !== 'awaiting_approval' ? { parentId: open.id, private: open.private || undefined } : {};
+    // "@scalvs <task>" or "@scalus <task>": the SCALVS agent on OpenClaw answers.
+    if (mention === 'scalvs') {
+      const res = startScalvsAgentRun({ task, opts: followUp, token: cidToken() });
+      if (res.error) { toast(res.error); return; }
+      taskDraft = '';
+      location.hash = `#/command?run=${res.run.id}`;
+      return;
+    }
     const s = getState();
     const [kind, id] = String(fd.get('target')).split(':');
     const agentIds = kind === 'team' ? (s.teams.find((t) => t.id === id)?.agentIds || []) : [id];
     const title = kind === 'team' ? s.teams.find((t) => t.id === id)?.name : undefined;
     const opts = takeAttachments();
-    const open = selectedRun();
-    if (open && open.status !== 'running' && open.status !== 'awaiting_approval') { opts.parentId = open.id; if (open.private) opts.private = true; }
+    if (followUp.parentId) { opts.parentId = followUp.parentId; if (followUp.private) opts.private = true; }
     const res = startRun({ task, agentIds, title, opts });
     if (res.error) { toast(res.error); return; }
     taskDraft = '';
@@ -184,6 +205,12 @@ export function bind(root, rerender) {
     else if (action === 'regenerate') {
       const run = getState().runs.find((x) => x.id === id);
       if (!run) return;
+      if (run.steps[0]?.agentId === SCALVS_AGENT_ID) {
+        const again = startScalvsAgentRun({ task: run.task, opts: { parentId: run.parentId, private: run.private }, token: window.CumulusID?.token?.() || '' });
+        if (again.error) { toast(again.error); return; }
+        location.hash = `#/command?run=${again.run.id}`;
+        return;
+      }
       const res = startRun({ task: run.task, agentIds: run.steps.map((st) => st.agentId), title: run.title, opts: { mode: run.kind || 'auto', parentId: run.parentId, private: run.private } });
       if (res.error) { toast(res.error); return; }
       location.hash = `#/command?run=${res.run.id}`;

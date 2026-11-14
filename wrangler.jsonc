@@ -2,10 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   // SCALVS.ai on Cloudflare Workers: static app from dist/ (npm run build),
   // /api/run and /api/forecast from worker.js. Secrets (ANTHROPIC_API_KEY,
-  // CONJURE_TOKEN, …) are set with `wrangler secret put`, never here.
+  // CONJURE_PRODUCT_KEY, CONJURE_TOKEN, …) are set with `wrangler secret put`, never here.
   "name": "scalvs-ai",
   "main": "worker.js",
   "compatibility_date": "2026-11-01",
+  // Global users run on US servers (Ashburn, Virginia); Russia is served by the ru.* copies on Yandex Cloud.
+  "placement": { "region": "gcp:us-east4" },
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   // Production domains (zone scalvs.app is on this Cloudflare account).
@@ -13,10 +15,20 @@
     { "pattern": "scalvs.app", "custom_domain": true },
     { "pattern": "www.scalvs.app", "custom_domain": true }
   ],
+  // No public *.workers.dev route; each uploaded version (npm run deploy:preview)
+  // gets its own preview URL for testing before it serves users.
+  "workers_dev": false,
+  "preview_urls": true,
   // Workers AI runs SCALVS agents and CONJURE forecasts when no ANTHROPIC_API_KEY
   // or CONJURE_URL is set. WORKERS_AI_MODEL overrides the model.
   "ai": { "binding": "AI" },
-  "vars": { "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+  // The account-wide free Workers AI ledger, owned by the conjure-llm Worker.
+  "durable_objects": { "bindings": [{ "name": "AI_BUDGET", "class_name": "Budget", "script_name": "conjure-llm" }] },
+  "vars": {
+    "WORKERS_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    // SCALVS Search asks VEIL Search (Infinitum's own engine, no key) first.
+    "VEIL_SEARCH_URL": "https://infinitumveil.app/api/search"
+  },
   // Per-IP cap on API POSTs (worker.js).
   "ratelimits": [
     { "name": "API_LIMIT", "namespace_id": "1701", "simple": { "limit": 60, "period": 60 } }

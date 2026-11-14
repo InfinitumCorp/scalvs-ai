@@ -1,7 +1,7 @@
 import './i18n/index.js';
 import { getState, update, subscribe, plan } from './store.js';
 import { esc, toast } from './ui.js';
-import { readReturn, syncPlan } from './billing.js';
+import { readReturn, cidToken, loadEntitlement, planFromEntitlement } from './billing.js';
 import { checkLive, recoverInterrupted, clearFinished } from './runner.js';
 import * as command from './views/command.js';
 import * as studio from './views/studio.js';
@@ -10,10 +10,11 @@ import * as earnings from './views/earnings.js';
 import * as forecast from './views/forecast.js';
 import * as automations from './views/automations.js';
 import * as shared from './views/shared.js';
+import * as search from './views/search.js';
 import { checkForecastLive, resumeForecasts } from './forecaster.js';
 import './firm/firm-suite.js'; // FIRM Suite embed (<firm-suite>), canonical copy from infinitum-nexus
 
-const ROUTES = { command, studio, connect, forecast, earnings, automations, shared };
+const ROUTES = { command, search, studio, connect, forecast, earnings, automations, shared };
 const main = document.getElementById('main');
 let current = null;
 let root = null;
@@ -109,22 +110,37 @@ if (billingReturn || location.search.includes('session_id=')) {
   else if (billingReturn === 'cancelled') toast('Checkout cancelled. No charge was made.');
 }
 
-// The paid plan comes from the revenue API, not from this browser.
+// Older builds kept a billing-org API key in this browser. Plans now follow the Cumulus ID, so drop it.
+if (getState().billing?.apiKey) update((st) => { st.billing = null; });
+
+// The paid plan comes from the revenue API for the signed-in Cumulus ID, not from this browser.
+let refreshedFor = null;
 async function refreshPlan(attempts = 1) {
-  const { billing } = getState();
-  if (!billing?.apiKey) return;
+  const token = cidToken();
+  if (!token || token === refreshedFor) return;
+  refreshedFor = token;
   for (let i = 0; i < attempts; i++) {
     try {
-      const next = await syncPlan({ billing });
-      if (next !== getState().plan) update((st) => { st.plan = next; if (next !== 'free') st.wallet.adsOptIn = false; });
+      const ent = await loadEntitlement({ token });
+      const next = planFromEntitlement(ent);
+      update((st) => {
+        st.billing = { ...(st.billing || {}), entitlement: ent && { plan: ent.plan, status: ent.status, seats: ent.seats } };
+        if (next !== st.plan) { st.plan = next; if (next !== 'free') st.wallet.adsOptIn = false; }
+      });
       if (next !== 'free' || i === attempts - 1) return;
-    } catch { return; /* offline or API down: keep the last known plan */ }
+    } catch { refreshedFor = null; return; /* offline or API down: keep the last known plan */ }
     await new Promise((r) => setTimeout(r, 2000)); // the Stripe webhook may land a moment after the redirect
   }
 }
+const planAttempts = billingReturn === 'success' ? 5 : 1;
+// cumulus-id.js announces sign-in and sign-out; it may run before or after this module.
+window.addEventListener('cumulus-id', (e) => {
+  if (e.detail) refreshPlan(planAttempts);
+  else { refreshedFor = null; renderView(); }
+});
 
 navigate();
-refreshPlan(billingReturn === 'success' ? 5 : 1);
+refreshPlan(planAttempts);
 recoverInterrupted();
 checkLive().then(() => renderView());
 checkForecastLive().then(() => { resumeForecasts(); renderView(); });

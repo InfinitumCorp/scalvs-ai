@@ -1,0 +1,89 @@
+# End-to-end test of the OpenClaw engine (docs/openclaw.md) on a GitHub-hosted
+# runner: Ollama with a small free model, a real OpenClaw gateway, and
+# SCALVS.ai's agent runtime calling it. Nothing paid, no provider keys.
+# Runs when the agent runtime or this test changes, or by hand.
+name: OpenClaw end to end
+
+on:
+  pull_request:
+    paths:
+      - 'api/run.js'
+      - 'api/_open-weights.js'
+      - 'api/_resilience.js'
+      - 'scripts/openclaw-e2e.mjs'
+      - '.github/workflows/openclaw-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openclaw-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    env:
+      MODEL: qwen3:0.6b
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports: ['11434:11434']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install SCALVS.ai dependencies
+        run: npm ci
+
+      - name: Pull the model into Ollama
+        run: |
+          curl -fsS http://127.0.0.1:11434/api/pull -d "{\"model\":\"$MODEL\",\"stream\":false}"
+          curl -fsS http://127.0.0.1:11434/api/tags
+
+      - name: Install OpenClaw
+        run: |
+          npm install -g openclaw@latest --allow-scripts=openclaw
+          openclaw --version
+
+      - name: Configure OpenClaw (headless, Ollama, token auth, chat endpoint on)
+        run: |
+          TOKEN=$(openssl rand -hex 24)
+          echo "::add-mask::$TOKEN"
+          echo "OPENCLAW_GATEWAY_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          export OPENCLAW_GATEWAY_TOKEN=$TOKEN
+          openclaw onboard --non-interactive --accept-risk --skip-health --mode local \
+            --auth-choice ollama --custom-base-url http://127.0.0.1:11434 --custom-model-id "$MODEL" \
+            --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN
+          openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+
+      - name: Start the gateway
+        run: |
+          nohup openclaw gateway run > gateway.log 2>&1 &
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" http://127.0.0.1:18789/v1/models || true)
+            [ "$code" = "200" ] && { echo "gateway up after ${i}x2s"; exit 0; }
+            sleep 2
+          done
+          echo "gateway never answered /v1/models (last: $code)"; exit 1
+
+      - name: Call the gateway directly
+        run: |
+          curl -fsS --max-time 300 http://127.0.0.1:18789/v1/chat/completions \
+            -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H 'content-type: application/json' \
+            -d '{"model":"openclaw/default","messages":[{"role":"user","content":"Reply with the single word: ready"}]}' | head -c 2000
+
+      - name: SCALVS.ai runtime against OpenClaw
+        env:
+          OPENCLAW_URL: http://127.0.0.1:18789/v1
+          OPEN_WEIGHTS_TIMEOUT_MS: 300000   # CPU-only runner: OpenClaw's agent prompt is ~13.5k tokens
+        run: OPENCLAW_TOKEN="$OPENCLAW_GATEWAY_TOKEN" node scripts/openclaw-e2e.mjs
+
+      - name: Gateway log
+        if: always()
+        run: tail -n 200 gateway.log || true

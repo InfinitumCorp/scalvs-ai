@@ -14,7 +14,8 @@ function seed() {
   const writer = TEMPLATES[1];
   return {
     plan: 'free',
-    // Billing org for real plans (src/billing.js): { orgId, apiKey, email } once created.
+    // Last known billing state for the signed-in Cumulus ID (src/billing.js):
+    // { entitlement: { plan, status, seats }, kind: 'business' once switched }.
     billing: null,
     agents: [
       {

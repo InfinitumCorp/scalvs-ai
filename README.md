@@ -18,6 +18,7 @@ This is the first working prototype of the four-step flow from the [product page
 
 Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.js`), which calls the Claude Messages API.
 
+- **Live on OpenClaw (open source):** set `OPENCLAW_URL` (and the `OPENCLAW_TOKEN` secret) and agents run on an [OpenClaw](https://github.com/openclaw/openclaw) gateway (MIT), ahead of every other engine. Pair it with free local models for a fully open-source stack. Setup: [docs/openclaw.md](docs/openclaw.md).
 - **Live on Workers AI (default on scalvs.app):** with no key set, agents run on the Worker's Workers AI binding (`WORKERS_AI_MODEL`, default `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), billed to the Cloudflare account. No provider key is needed.
 - **Live on Claude:** set `ANTHROPIC_API_KEY` as a Worker secret (optionally `SCALVS_MODEL`, default `claude-sonnet-5-5`, and `ANTHROPIC_BASE_URL` for a gateway). Agents then produce real work, streamed token by token.
 - **Demo:** with no key the function answers `503` and the app falls back to simulated agent output, so everything still works end to end.
@@ -25,6 +26,15 @@ Agent steps run through `api/run.js`, served by the Cloudflare Worker (`worker.j
 The composer shows which mode is active.
 
 Provider failures and empty model responses fail the run with a retryable error; they are not replaced with a simulated successful result. A streamed answer counts only when the stream ends with an explicit completion event; provider stream errors, early disconnects and text-less streams fail the step. Approval applies only to the currently pending draft and cannot advance a team twice. **Stop** aborts the in-flight request, marks the run stopped and releases queued steps' credit reservations (the started step keeps its charge); a stopped run cannot be approved or completed afterwards. Runs left `running` by a page reload are stopped on the next load. The browser UI and its approvals are prototype controls, not a server-enforced authorization boundary for external tools.
+
+## Search (`#/search`)
+
+Perplexity-style answers from the live web. Ask a question, SCALVS searches, reads the top pages, and streams an answer that cites them as `[1]`, `[2]`, with source cards and follow-up questions. Threads are kept in the browser.
+
+- **Quick** searches once and reads 6 pages. **Pro** has the model plan up to 3 more searches, reads 9 pages and follows the 3 most relevant links on them.
+- The crawler (`api/_crawl.js`) identifies itself as `SCALVS-Search`, obeys `robots.txt` (user agent `scalvs-search`), fetches public `https://` pages only, caps each page at 450 KB, and caches extracted pages for 6 hours. It picks the passages that best match the question (BM25) and drops pages that don't cover it.
+- Search provider, first one configured wins: Brave Search API, Google Programmable Search, or your own SearXNG. With none, it uses the keyless Wikipedia and Hacker News APIs.
+- `POST /api/search {q, depth, history}` streams `status`, `queries`, `sources`, `text`, `related`, `done` events. It needs a model (any engine above).
 
 ## Connectors
 
@@ -35,6 +45,8 @@ Provider failures and empty model responses fail the run with a retryable error;
 - **Custom connectors:** anyone can add a remote MCP server by URL. Only public `https://` URLs are accepted (no private addresses).
 - **Permissions:** read-only tools are on for agents by default; tools that write (send, post, create) start off and are switched per tool on the Connect page. Agents are told tool output is data, not instructions.
 - **Storage:** tokens are sealed with AES-GCM (`CONNECT_SECRET`) in Workers KV (`CONNECT` binding), keyed by a hash of an HttpOnly session cookie. Tokens never reach the browser. There are no SCALVS.ai accounts yet, so the browser that holds the cookie owns its connections.
+
+Sign-in is Cumulus://ID only. `public/cumulus-bar.js` is a copy of the Cumulus://ID account bar (`https://id.cumuluscloud.app/id/bar.js`, client `scalvs`; it sits at the right of the top bar on every page and provides `window.CumulusID`, PKCE S256, "Create a Cumulus://ID" sends `prompt=create`); there is no local password, passcode or PIN. `/api/openclaw` verifies the button's access token against the issuer's JWKS (`https://id.cumuluscloud.app/realms/cumulus`, ES256, `typ: at+jwt`, `aud: scalvs`, `exp`), confirms the session at the issuer's `userinfo`, and keys the person by the token's `sub`. `CID_ISSUER` names a mirror issuer.
 
 Setup before deploying:
 
@@ -59,7 +71,8 @@ Run `npm test` for agent lifecycle, streaming relay, Stop and API regression tes
 
 `api/forecast.js` drives CONJURE™, the Infinitum prediction model, through its HTTP API. The CONJURE engine is a self-hosted, unmodified [MiroFish](https://github.com/666ghj/MiroFish) backend. Pipeline: read seed material → build knowledge graph → generate persona agents → simulate → ReportAgent report. The job object lives in the browser; each `POST /api/forecast {action:"advance"}` performs exactly one upstream step, so every serverless call is short and live forecasts resume after a reload. The server re-validates every job it receives (step names, id format, size and round limits). Forecasts cost 60 prototype credits.
 
-- **Live:** set `CONJURE_URL` (and `CONJURE_TOKEN` if the engine sits behind an auth gateway; the old `MIROFISH_*` names still work). The engine itself needs its own `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_NAME` and `ZEP_API_KEY`; run it with its Docker image or `npm run dev` from its repo.
+- **Live on Conjure (preferred):** set `CONJURE_URL` (e.g. `https://conjure.infinitumcorporation.ai`) and the secret `CONJURE_PRODUCT_KEY` (`cjp_scalvs_…`, issued on the Conjure Russia server). Forecasts then run on Conjure's product API (`api/_conjure-api.js`, client vendored from InfinitumCorp/Conjure `client/conjure.mjs`): `POST /v1/predictions` starts one, each advance polls `GET /v1/predictions/:id`, the structured report (outcome, probability, drivers, signals) is rendered as the markdown report, and “Ask the ReportAgent” interviews the most influential simulated persona via `/interview`. SCALVS rounds 10/20/40 map to Conjure rounds 2/4/8. The key stays server-side.
+- **Live on MiroFish:** set `CONJURE_URL` without `CONJURE_PRODUCT_KEY` (and `CONJURE_TOKEN` if the engine sits behind an auth gateway; the old `MIROFISH_*` names still work). The engine itself needs its own `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_NAME` and `ZEP_API_KEY`; run it with its Docker image or `npm run dev` from its repo.
 - **Live on Workers AI (default on scalvs.app):** without `CONJURE_URL`, CONJURE™ runs inside the Worker: the nexus engine (`api/_conjure-engine.ts`, vendored from infinitum-nexus `packages/conjure`) builds a world of 12 persona agents, plays up to 6 rounds (one per request) and writes the report. Caps are enforced server-side; API POSTs are rate-limited to 60 per minute per IP.
 - **Demo:** with no engine URL and no AI binding (for example `npm run dev`), the app runs a labeled placeholder. No agents are simulated and the report says it is not a prediction.
 - **Licensing:** CONJURE™ is the Infinitum product name; its engine, MiroFish, is open source under AGPL-3.0 and keeps its own copyright. It runs unmodified as a separate service and is called only over HTTP; none of its code is copied here. If you modify MiroFish and offer it to users over a network, the AGPL requires publishing those modifications.
@@ -121,6 +134,13 @@ Set secrets with `npx wrangler secret put <NAME>`, or put them in a git-ignored 
 | `ANTHROPIC_API_KEY` | secret | Turns on live agents. |
 | `SCALVS_MODEL` | var | Optional model override (default `claude-sonnet-5-5`). |
 | `ANTHROPIC_BASE_URL` | var | Optional gateway URL. |
+| `OPENCLAW_URL` | var | OpenClaw gateway URL (`…/v1`). When set, agents run on OpenClaw. See [docs/openclaw.md](docs/openclaw.md). |
+| `OPENCLAW_TOKEN` | secret | OpenClaw gateway token (full operator access to that gateway). |
+| `OPENCLAW_AGENT` / `OPENCLAW_MODEL` | var | Optional agent target (default `openclaw/default`) and provider model override. |
+| `BRAVE_SEARCH_API_KEY` | secret | Optional. Brave Search API key for Search and DeepSearch (free tier). |
+| `GOOGLE_CSE_KEY` / `GOOGLE_CSE_CX` | secret / var | Optional. Google Programmable Search key and engine id (100 free queries a day). |
+| `VEIL_SEARCH_URL` | var | Optional. `https://infinitumveil.app/api/search`: VEIL Search, Infinitum's own engine (no key). Used first when set. |
+| `SEARXNG_URL` | var | Optional. Your own SearXNG with `format=json` enabled. With none of these, Search uses Wikipedia + Hacker News. |
 | `CONJURE_URL` | var | CONJURE™ engine base URL. Must be private or behind a token-checking proxy. |
 | `CONJURE_TOKEN` | secret | Token for that proxy. |
 
