@@ -7,6 +7,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { browserConfig } from './scripts/browser-config.mjs';
+import { mixpanelBoot } from './scripts/mixpanel-boot.mjs';
 import * as runApi from './api/run.js';
 import * as forecastApi from './api/forecast.js';
 import * as connectorsApi from './api/connectors.js';
@@ -58,6 +59,10 @@ createServer(async (req, res) => {
     const urlPath = url.pathname.replace(/\/+$/, '/');
     let path = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, '');
     if (path === '/' || path === '\\') path = '/index.html';
+    if (url.pathname === '/public/mixpanel-boot.js') {
+      res.writeHead(200, { 'content-type': TYPES['.js'] }).end(mixpanelBoot());
+      return;
+    }
     if (url.pathname === '/src/config.js') {
       res.writeHead(200, { 'content-type': TYPES['.js'] }).end(browserConfig());
       return;
