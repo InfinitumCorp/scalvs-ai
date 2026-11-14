@@ -14,7 +14,7 @@
 //
 //   const ai = tracedAI(budgetedAI(env.AI, env.AI_BUDGET), langfuseFromEnv(env, { product: "scalvs" }), { waitUntil });
 //
-// Copy this file unchanged into a Worker. Source: InfinitumCorp/scalvs-ai api/_ai-langfuse.mjs.
+// Copy this file unchanged into a Worker. Copies: scalvs-ai api/_ai-langfuse.mjs, architect src/brains/ai-langfuse.mjs.
 
 export const LANGFUSE_CLIENT_VERSION = "1.0.0";
 const DEFAULT_BASE = "https://cloud.langfuse.com";
