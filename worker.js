@@ -11,10 +11,18 @@ import { imagine, share } from './api/grok.js';
 import * as scalvsAgent from './api/scalvs-agent.js';
 import * as search from './api/search.js';
 import { budgetedAI, FreeAllowanceUsed } from './api/_ai-budget.js';
+import { langfuseFromEnv, tracedAI } from './api/_ai-langfuse.mjs';
 
 // Every Workers AI call on the account is charged to one shared ledger (the conjure-llm
 // Worker's Budget Durable Object), so usage stays inside the free 10,000 neurons a day.
-const withBudget = (env, ctx) => (env.AI && env.AI_BUDGET ? { ...env, AI: budgetedAI(env.AI, env.AI_BUDGET, { waitUntil: ctx?.waitUntil?.bind(ctx) }) } : env);
+const budgeted = (env, ctx) => (env.AI && env.AI_BUDGET ? { ...env, AI: budgetedAI(env.AI, env.AI_BUDGET, { waitUntil: ctx?.waitUntil?.bind(ctx) }) } : env);
+// Langfuse: one span per Workers AI call (model, latency, tokens, errors; no prompts unless
+// LANGFUSE_CAPTURE_CONTENT=on). On whenever LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY are set; LANGFUSE=off disables.
+const withBudget = (env, ctx) => {
+  const out = budgeted(env, ctx);
+  const tracer = out.AI ? langfuseFromEnv(env, { product: 'scalvs' }) : null;
+  return tracer ? { ...out, AI: tracedAI(out.AI, tracer, { waitUntil: ctx?.waitUntil?.bind(ctx) }) } : out;
+};
 
 const ROUTES = { '/api/run': run, '/api/forecast': forecast, '/api/imagine': { POST: imagine }, '/api/share': { GET: share, POST: share }, '/api/openclaw': scalvsAgent, '/api/search': search };
 const SECURITY_HEADERS = {
