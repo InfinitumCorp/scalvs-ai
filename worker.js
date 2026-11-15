@@ -12,6 +12,7 @@ import * as scalvsAgent from './api/scalvs-agent.js';
 import * as search from './api/search.js';
 import { budgetedAI, FreeAllowanceUsed } from './api/_ai-budget.js';
 import { langfuseFromEnv, tracedAI } from './api/_ai-langfuse.mjs';
+import { withX402 } from './api/_x402.js';
 
 // Every Workers AI call on the account is charged to one shared ledger (the conjure-llm
 // Worker's Budget Durable Object), so usage stays inside the free 10,000 neurons a day.
@@ -52,15 +53,20 @@ export default {
         });
       }
     }
-    let response;
-    try {
-      response = await handler(request, env, ctx);
-    } catch (err) {
-      if (!(err instanceof FreeAllowanceUsed)) throw err;
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 429, headers: { ...SECURITY_HEADERS, 'content-type': 'application/json' },
-      });
-    }
+    const call = async () => {
+      try {
+        return await handler(request, env, ctx);
+      } catch (err) {
+        if (!(err instanceof FreeAllowanceUsed)) throw err;
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 429, headers: { ...SECURITY_HEADERS, 'content-type': 'application/json' },
+        });
+      }
+    };
+    // x402: AI agents and scripts pay per request (default $0.001 USDC on Base); people on
+    // scalvs.app stay free. Inert until X402_PAY_TO is set; X402=off disables. Connectors,
+    // OAuth and automations are cookie-bound site features and are never gated.
+    const response = isConnectors || isAutomations ? await call() : await withX402(request, env, call);
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
     // redirects (OAuth) keep their Location; Response.redirect headers are immutable, so copy
