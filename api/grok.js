@@ -23,7 +23,8 @@ const strip = (html) => html
   .replace(/\s+/g, ' ').trim();
 
 
-// Web search providers. Configured ones are tried in order: Brave Search API
+// Web search providers. Configured ones are tried in order: VEIL Search (VEIL_SEARCH_URL), Exa
+// (EXA_API_KEY, startup credits; EXA_SEARCH=off disables; also the fallback when VEIL comes back thin), Brave Search API
 // (BRAVE_SEARCH_API_KEY, free tier), Google Programmable Search (GOOGLE_CSE_KEY +
 // GOOGLE_CSE_CX, 100 free queries a day), or a self-hosted SearXNG (SEARXNG_URL,
 // open-source metasearch with format=json enabled). With none of them, or when
@@ -55,6 +56,20 @@ async function veilSearch(query, limit, url) {
   const data = await getJson(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ q: query }) });
   return httpsOnly((data.results || []).slice(0, limit * 2).map((r) => ({ title: strip(r.title || ''), url: r.url, snippet: strip(r.snippet || '') }))).slice(0, limit);
 }
+// Exa (exa.ai) web search: startup credits. The query goes in the POST body; highlights become snippets.
+async function exaSearch(query, limit, key) {
+  const data = await getJson('https://api.exa.ai/search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key },
+    body: JSON.stringify({ query, type: 'auto', numResults: Math.min(limit, 10), contents: { highlights: { numSentences: 2 } } }),
+  });
+  return httpsOnly((data.results || []).map((r) => ({
+    title: strip(r.title || r.url || ''),
+    url: r.url,
+    snippet: strip((Array.isArray(r.highlights) && r.highlights.length ? r.highlights.join(' ') : r.text || '').slice(0, 600)),
+  }))).slice(0, limit);
+}
+const exaKey = (env) => (String(cfg(env, 'EXA_SEARCH') || '').toLowerCase() === 'off' ? '' : cfg(env, 'EXA_API_KEY') || '');
 async function wikipediaSearch(query, limit) {
   const data = await getJson(`https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${limit}&srsearch=${encodeURIComponent(query)}`);
   return (data.query?.search || []).map((r) => ({ title: r.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`, snippet: strip(r.snippet || '') }));
@@ -70,6 +85,7 @@ async function hackerNewsSearch(query, limit) {
 
 export function searchEngine(env) {
   if (/^https:\/\//.test(cfg(env, 'VEIL_SEARCH_URL') || '')) return 'veil';
+  if (exaKey(env)) return 'exa';
   if (cfg(env, 'BRAVE_SEARCH_API_KEY')) return 'brave';
   if (cfg(env, 'GOOGLE_CSE_KEY') && cfg(env, 'GOOGLE_CSE_CX')) return 'google';
   if (cfg(env, 'SEARXNG_URL')) return 'searxng';
@@ -80,12 +96,20 @@ export async function searchWeb(query, limit = 6, env = {}) {
   const engine = searchEngine(env);
   try {
     const hits = engine === 'veil' ? await veilSearch(query, limit, cfg(env, 'VEIL_SEARCH_URL'))
+      : engine === 'exa' ? await exaSearch(query, limit, exaKey(env))
       : engine === 'brave' ? await braveSearch(query, limit, cfg(env, 'BRAVE_SEARCH_API_KEY'))
       : engine === 'google' ? await googleSearch(query, limit, cfg(env, 'GOOGLE_CSE_KEY'), cfg(env, 'GOOGLE_CSE_CX'))
       : engine === 'searxng' ? await searxngSearch(query, limit, cfg(env, 'SEARXNG_URL'))
       : [];
     if (hits.length >= 3) return hits;
-  } catch { /* fall back to the keyless APIs */ }
+  } catch { /* fall back to Exa, then the keyless APIs */ }
+  // VEIL (or another engine) came back thin: Exa next, when a key is set.
+  if (engine !== 'exa' && exaKey(env)) {
+    try {
+      const hits = await exaSearch(query, limit, exaKey(env));
+      if (hits.length >= 3) return hits;
+    } catch { /* fall back to the keyless APIs */ }
+  }
   // Keyword search engines: a full sentence finds little, its keywords find more.
   const keywords = terms(query).slice(0, 8).join(' ') || query;
   const [wiki, hn] = await Promise.all([
