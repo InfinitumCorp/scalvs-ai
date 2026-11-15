@@ -65,6 +65,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Optional repository variable; unset uses the default in src/config.js.
       REVENUE_URL: ${{ vars.REVENUE_URL }}
+      # Mixpanel boot (scripts/mixpanel-boot.mjs) is written at build time; unset keeps Mixpanel off.
+      MIXPANEL_PROJECT_TOKEN: ${{ secrets.MIXPANEL_PROJECT_TOKEN || vars.MIXPANEL_PROJECT_TOKEN }}
+      MIXPANEL_REGION: ${{ vars.MIXPANEL_REGION || 'US' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
