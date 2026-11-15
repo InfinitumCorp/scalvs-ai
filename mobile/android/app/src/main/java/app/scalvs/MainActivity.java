@@ -17,5 +17,6 @@ public class MainActivity extends BridgeActivity {
         if (web != null && WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION)) {
             WebSettingsCompat.setWebAuthenticationSupport(web.getSettings(), WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP);
         }
+        Analytics.start(this);
     }
 }
