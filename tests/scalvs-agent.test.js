@@ -63,13 +63,13 @@ test('is off until configured and says how to connect', async () => {
 
 const ISSUER = 'https://id.cumuluscloud.app/realms/cumulus';
 const b64url = (bytes) => Buffer.from(bytes).toString('base64url');
-async function issuer() {
+async function issuer(kid = 'k1') {
   const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
-  const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'k1', use: 'sig', alg: 'ES256' };
+  const jwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid, use: 'sig', alg: 'ES256' };
   const sign = async (over = {}, header = {}) => {
     const now = Math.floor(Date.now() / 1000);
     const claims = { iss: ISSUER, aud: 'scalvs', sub: 'cid_7c1e', client_id: 'scalvs', sid: 's1', iat: now, exp: now + 600, ...over };
-    const h = b64url(JSON.stringify({ alg: 'ES256', typ: 'at+jwt', kid: 'k1', ...header }));
+    const h = b64url(JSON.stringify({ alg: 'ES256', typ: 'at+jwt', kid, ...header }));
     const p = b64url(JSON.stringify(claims));
     const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, pair.privateKey, new TextEncoder().encode(`${h}.${p}`));
     return `${h}.${p}.${b64url(new Uint8Array(sig))}`;
@@ -129,4 +129,26 @@ test('also reads the OPENCLAW_URL / OPENCLAW_TOKEN pair that agent runs use', as
   assert.equal(res.status, 200);
   assert.equal(urls.at(-1), 'https://claw.test/v1/chat/completions');
   assert.equal(gatewayEnv({ OPENCLAW_GATEWAY_URL: 'https://a.test', OPENCLAW_URL: 'https://b.test/v1' }).OPENCLAW_GATEWAY_URL, 'https://a.test');
+});
+
+test('a new issuer key is accepted at once (the cut-over); made-up key ids cannot force a refetch every time', async () => {
+  const old = await issuer('k1');
+  const next = await issuer('k2');
+  let published = [old.jwk];
+  let certs = 0;
+  let t = 1_000_000;
+  const fetch = async (url) => {
+    if (url.endsWith('/certs')) { certs++; return new Response(JSON.stringify({ keys: published })); }
+    return new Response(JSON.stringify({ sub: 'cid_7c1e' }));
+  };
+  const v = createCidVerifier({ fetch, now: () => t });
+  assert.equal(await v(await old.sign()), 'cid_7c1e');
+  assert.equal(certs, 1);
+  published = [next.jwk];
+  t += 31_000;
+  assert.equal(await v(await next.sign({ sid: 's2' })), 'cid_7c1e');
+  assert.equal(certs, 2);
+  const forged = await issuer('nope');
+  assert.equal(await v(await forged.sign({ sid: 's3' })), null);
+  assert.equal(certs, 2, 'no second fetch inside 30 s');
 });

@@ -40,7 +40,7 @@ export async function verifyCidAccessToken(token, { issuer, audience, getKeys, n
     return null;
   }
   if (header?.alg !== 'ES256' || String(header.typ || '').toLowerCase() !== 'at+jwt') return null;
-  const keys = await getKeys().catch(() => []);
+  const keys = await getKeys(typeof header.kid === 'string' ? header.kid : undefined).catch(() => []);
   const jwk = keys.find((k) => k && k.kty === 'EC' && k.crv === 'P-256' && (!header.kid || k.kid === header.kid) && (!k.use || k.use === 'sig'));
   if (!jwk) return null;
   let ok = false;
@@ -74,13 +74,17 @@ export function createCidVerifier({ issuer = DEFAULT_ISSUER, audience = CID_CLIE
   const cache = new Map();
   const doFetch = (...args) => (fetchImpl ?? globalThis.fetch)(...args);
   let jwks = null;
-  const getKeys = async () => {
-    if (jwks && jwks.until > now()) return jwks.keys;
+  // A token signed with a key not in the cache (the issuer's key changed, e.g. at the Cumulus://ID cut-over)
+  // refetches the JWKS at once instead of failing until the cache expires; at most every 30 s, so made-up key
+  // ids can't make this hammer the issuer.
+  const getKeys = async (kid) => {
+    const unknownKid = Boolean(kid && jwks && !jwks.keys.some((k) => k && k.kid === kid));
+    if (jwks && jwks.until > now() && !(unknownKid && now() - jwks.fetchedAt >= 30_000)) return jwks.keys;
     const res = await doFetch(`${oidc}/certs`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
     if (!res.ok) throw new Error(`JWKS HTTP ${res.status}`);
     const body = await res.json();
     const keys = Array.isArray(body?.keys) ? body.keys : [];
-    jwks = { keys, until: now() + JWKS_MS };
+    jwks = { keys, until: now() + JWKS_MS, fetchedAt: now() };
     return keys;
   };
   return async function verify(token) {
